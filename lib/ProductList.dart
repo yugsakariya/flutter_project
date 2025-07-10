@@ -16,12 +16,6 @@ class _ProductListState extends State<ProductList> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
   Stream<QuerySnapshot> _getProductStream() {
     if (_searchQuery.isEmpty) {
       return FirebaseFirestore.instance
@@ -257,7 +251,7 @@ class _ProductListState extends State<ProductList> {
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
-                                        "Stock: ${item['stock'] ?? '0'}",
+                                        "Stock: ${item['stock'] ?? '0'} kg",
                                         style: TextStyle(
                                           color: (item['stock'] ?? 0) > 0
                                               ? Colors.green

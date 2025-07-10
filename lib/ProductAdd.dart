@@ -82,6 +82,7 @@ class _ProductAddState extends State<ProductAdd> {
                         decoration: const InputDecoration(
                           labelText: "Stock",
                           border: OutlineInputBorder(),
+                          suffixText: "kg",
                         ),
                         validator: (value) {
                           if (value!.isEmpty) {
@@ -102,6 +103,7 @@ class _ProductAddState extends State<ProductAdd> {
                           labelText: "Price",
                           border: OutlineInputBorder(),
                           prefixText: "₹ ",
+                          suffixText: "per kg",
                         ),
                         validator: (value) {
                           if (value!.isEmpty) {

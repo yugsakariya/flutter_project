@@ -45,7 +45,7 @@ class _DashboardState extends State<Dashboard> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _buildSummaryCard("Low Stock", "5", Colors.redAccent, Icons.warning),
-                _buildSummaryCard("Total Product", "24", Colors.indigo, Icons.shopping_cart),
+                _buildSummaryCard("Stock", "24", Colors.indigo, Icons.shopping_cart),
               ],
             ),
             SizedBox(height: 16),
