@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_project/Dashboard.dart';
 import 'package:flutter_project/ProductAdd.dart';
 import 'package:flutter_project/ProductEdit.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -25,7 +24,7 @@ class _ProductListState extends State<ProductList> {
       return FirebaseFirestore.instance
           .collection('products')
           .where('productName', isGreaterThanOrEqualTo: _searchQuery)
-          .where('productName', isLessThanOrEqualTo: _searchQuery + '\uf8ff')
+          .where('productName', isLessThanOrEqualTo: '$_searchQuery\uf8ff')
           .snapshots();
     }
   }
@@ -149,7 +148,6 @@ class _ProductListState extends State<ProductList> {
                       child: Text('Error: ${snapshot.error}'),
                     );
                   }
-
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                     return Center(
                       child: Column(
@@ -174,133 +172,139 @@ class _ProductListState extends State<ProductList> {
                       ),
                     );
                   }
-
-                  return ListView.builder(
-                    itemCount: snapshot.data!.docs.length,
-                    itemBuilder: (context, index) {
-                      final doc = snapshot.data!.docs[index];
-                      final item = doc.data() as Map<String, dynamic>;
-                      final docRef = doc.id;
-
-                      return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 4,
-                        child: Padding(
-                          padding: const EdgeInsets.all(12.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      item['productName'] ?? 'Unknown Product',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: _getCategoryColor(item['category'] ?? ''),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      item['category'] ?? 'Uncategorized',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w500,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                "Price: \₹${item['price'] ?? '0.00'}",
-                                style: const TextStyle(
-                                ),
-                              ),
-                              Text("Supplier: ${item['supplier'] ?? 'Unknown'}"),
-                              const SizedBox(height: 6),
-                              Text(
-                                item['description'] ?? 'No description available',
-                                style: TextStyle(color: Colors.grey[700]),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.inventory,
-                                        size: 18,
-                                        color: Colors.blue,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        "Stock: ${item['stock'] ?? '0'} kg",
-                                        style: TextStyle(
-                                          color: (item['stock'] ?? 0) > 0
-                                              ? Colors.green
-                                              : Colors.red,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  Row(
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.edit,
-                                          color: Colors.amber,
-                                        ),
-                                        onPressed: () async {
-                                          await Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) => ProductEdit(
-                                                docRef: doc.id,
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.delete,
-                                          color: Colors.red,
-                                        ),
-                                        onPressed: () {
-                                          _showDeleteConfirmation(
-                                            doc.id,
-                                            item['productName'] ?? 'Unknown Product',
-                                          );
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ],
+                  else{
+                    return ListView.builder(
+                      itemCount: snapshot.data!.docs.length,
+                      itemBuilder: (context, index) {
+                        final doc = snapshot.data!.docs[index];
+                        final item = doc.data() as Map<String, dynamic>;
+                        return Card(
+                          margin: const EdgeInsets.symmetric(vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        ),
-                      );
-                    },
-                  );
+                          elevation: 4,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        item['productName'] ??
+                                            'Unknown Product',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: _getCategoryColor(
+                                            item['category'] ?? ''),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        item['category'] ?? 'Uncategorized',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w500,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  "Price: ₹${item['price'] ?? '0.00'}",
+                                  style: const TextStyle(
+                                  ),
+                                ),
+                                Text("Supplier: ${item['supplier'] ??
+                                    'Unknown'}"),
+                                const SizedBox(height: 6),
+                                Text(
+                                  item['description'] ??
+                                      'No description available',
+                                  style: TextStyle(color: Colors.grey[700]),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment
+                                      .spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.inventory,
+                                          size: 18,
+                                          color: Colors.blue,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          "Stock: ${item['stock'] ?? '0'} kg",
+                                          style: TextStyle(
+                                            color: (item['stock'] ?? 0) > 0
+                                                ? Colors.green
+                                                : Colors.red,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.edit,
+                                            color: Colors.amber,
+                                          ),
+                                          onPressed: () async {
+                                            await Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    ProductEdit(
+                                                      docRef: doc.id,
+                                                    ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.delete,
+                                            color: Colors.red,
+                                          ),
+                                          onPressed: () {
+                                            _showDeleteConfirmation(
+                                              doc.id,
+                                              item['productName'] ??
+                                                  'Unknown Product',
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  }
                 },
               ),
             ),
