@@ -24,9 +24,31 @@ class _ProductEditState extends State<ProductEdit> {
     super.initState();
     _loadProductData();
   }
+  Future<void> _loadProductData() async {
+    try {
+      DocumentSnapshot docData = await FirebaseFirestore.instance
+          .collection('products')
+          .doc(widget.docRef)
+          .get();
 
-
-
+      if (docData.exists) {
+        _productNameController.text = docData["productName"] ?? '';
+        _categoryController.text = docData["category"] ?? '';
+        _stockController.text = docData["stock"]?.toString() ?? '';
+        _priceController.text = docData["price"]?.toString() ?? '';
+        _descriptionController.text = docData["description"] ?? '';
+        _supplierController.text = docData["supplier"] ?? '';
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading product data: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
   @override
   void dispose() {
     _productNameController.dispose();
@@ -50,7 +72,6 @@ class _ProductEditState extends State<ProductEdit> {
         body: Center(child: CircularProgressIndicator()),
       );
     }
-
     return Scaffold(
       appBar: AppBar(
         title: Text("Edit Product"),

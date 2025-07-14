@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_project/TransactionUpdate.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
 import 'TransactionAdd.dart';
@@ -15,10 +16,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
 
 
   void _updateTransaction(String docId){
-    showDialog(context: context, builder: (_){
-
-    });
-
+    Transactionupdate(docRef: 'docId');
   }
   void _deleteTransaction(String docId) {
     FirebaseFirestore.instance.collection('transaction').doc(docId).delete().then((_)=> Navigator.pop(context)).catchError((error) {
@@ -127,10 +125,10 @@ class _TransactionScreenState extends State<TransactionScreen> {
   String _searchQuery='';
   Stream<QuerySnapshot> _getTransactionStream(){
    if(_searchQuery.isEmpty){
-     return FirebaseFirestore.instance.collection('transaction').snapshots();
+     return FirebaseFirestore.instance.collection('transactions').snapshots();
    }else{
      return FirebaseFirestore.instance
-         .collection('transaction')
+         .collection('transactions')
          .where('',isGreaterThanOrEqualTo: _searchQuery)
          .where('', isLessThanOrEqualTo: '$_searchQuery\uf8ff')
          .snapshots();
@@ -144,7 +142,9 @@ class _TransactionScreenState extends State<TransactionScreen> {
           backgroundColor: Colors.indigo,
           child: const Icon(Icons.add, color: Colors.white),
           onPressed: () {
-            Navigator.push(context, MaterialPageRoute(builder: (_)=> TransactionAdd()));
+            showDialog(context: context, builder: (context) {
+              return TransactionAdd();
+            });
           }
       ),
       body:  Padding(
@@ -256,15 +256,15 @@ class _TransactionScreenState extends State<TransactionScreen> {
                                     SizedBox(width: 5),
                                     Text("Unit Price: \₹${doc['unitPrice']}")
                                   ]),
-                                  Row(children: [
-                                    Icon(Icons.money, size: 18),
-                                    SizedBox(width: 5),
-                                    Text("Total: \₹${doc['total']}")
-                                  ]),
+                                  // Row(children: [
+                                  //   Icon(Icons.money, size: 18),
+                                  //   SizedBox(width: 5),
+                                  //   Text("Total: \₹${doc['total']}")
+                                  // ]),
                                   Row(children: [
                                     Icon(Icons.calendar_today, size: 18),
                                     SizedBox(width: 5),
-                                    Text("Date: ${doc['date']}")
+                                    Text("Date: ${doc['date'].toDate().day} ${DateFormat('MMM').format(doc['date'].toDate())} ${doc['date'].toDate().year}")
                                   ]),
                                   Row(children: [
                                     Icon(Icons.local_offer, size: 18),
