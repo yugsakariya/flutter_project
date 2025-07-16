@@ -1,210 +1,97 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
-
-class ProductAdd extends StatefulWidget {
-  const ProductAdd({super.key});
-
-  @override
-  State<ProductAdd> createState() => _ProductAddState();
-}
-
-class _ProductAddState extends State<ProductAdd> {
-  final _formKey = GlobalKey<FormState>();
-  final _productController = TextEditingController();
-  final _categoryController = TextEditingController();
-  final _stockController = TextEditingController();
-  final _priceController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  final _supplierController = TextEditingController();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
-      appBar: AppBar(
-        title: const Text("Add Product"),
-        backgroundColor: Colors.indigo,
-        foregroundColor: Colors.white,
-      ),
-      body: Center(
-          child: Container(
-            width: 380,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: const [
-                BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 5)),
-              ],
-            ),
-            child: SingleChildScrollView(
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: TextFormField(
-                       controller: _productController,
-                        decoration: const InputDecoration(
-                          labelText: "Product Name",
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (value!.isEmpty) {
-                            return 'Please enter product name';
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: TextFormField(
-                        controller: _categoryController,
-                        decoration: const InputDecoration(
-                          labelText: "Category",
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (value!.isEmpty) {
-                            return 'Please enter category';
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: TextFormField(
-                        controller: _stockController,
-                        decoration: const InputDecoration(
-                          labelText: "Stock",
-                          border: OutlineInputBorder(),
-                          suffixText: "kg",
-                        ),
-                        validator: (value) {
-                          if (value!.isEmpty) {
-                            return 'Please enter stock';
-                          }
-                          else if(!RegExp(r'^[0-9]+$').hasMatch(value)) {
-                            return 'Please enter a valid stock number';
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: TextFormField(
-                        controller: _priceController,
-                        decoration: const InputDecoration(
-                          labelText: "Price",
-                          border: OutlineInputBorder(),
-                          prefixText: "₹ ",
-                          suffixText: "per kg",
-                        ),
-                        validator: (value) {
-                          if (value!.isEmpty) {
-                            return 'Please enter price';
-                          }
-                          else if(!RegExp(r'^[0-9]+$').hasMatch(value)) {
-                            return 'Please enter a valid price';
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: TextFormField(
-                        controller: _descriptionController,
-                        decoration: const InputDecoration(
-                          labelText: "Description",
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (value!.isEmpty) {
-                            return 'Please enter description';
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: TextFormField(
-                        controller: _supplierController,
-                        decoration: const InputDecoration(
-                          labelText: "Supplier",
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (value!.isEmpty) {
-                            return 'Please enter supplier name';
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(context); // just go back
-                          },
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.grey[300]),
-                          child: const Text("Cancel", style: TextStyle(color: Colors.black)),
-                        ),
-                        const SizedBox(width: 10),
-                        ElevatedButton(
-                          onPressed: () {
-                            if (_formKey.currentState!.validate()) {
-                                Fluttertoast.showToast(
-                                  msg: "Product Saved",
-                                  toastLength: Toast.LENGTH_SHORT,
-                                  gravity: ToastGravity.BOTTOM,
-                                  backgroundColor: Colors.black,
-                                  textColor: Colors.white,
-                                  fontSize: 16.0
-                                );
-                                FirebaseFirestore.instance.collection('products').add({
-                                  'productName': _productController.text,
-                                  'category': _categoryController.text,
-                                  'stock': int.parse(_stockController.text),
-                                  'price': double.parse(_priceController.text),
-                                  'description': _descriptionController.text,
-                                  'supplier': _supplierController.text,
-                                }).then((value) {
-                                  Navigator.pop(context); // go back after saving
-                                }).catchError((error) {
-                                  Fluttertoast.showToast(
-                                    msg: "Failed to save product: $error",
-                                    toastLength: Toast.LENGTH_SHORT,
-                                    gravity: ToastGravity.BOTTOM,
-                                    backgroundColor: Colors.red,
-                                    textColor: Colors.white,
-                                    fontSize: 16.0
-                                  );
-                                });
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                          ),
-                          child: Text("Save Product", style: TextStyle(color: Colors.white)),
-                        ),
-                      ],
-                    )
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-    );
-  }
-  }
+// import 'package:cloud_firestore/cloud_firestore.dart';
+// import 'package:flutter/material.dart';
+// import 'package:intl/intl.dart';
+//
+// class StockScreen extends StatefulWidget {
+//   const StockScreen({super.key});
+//
+//   @override
+//   State<StockScreen> createState() => _StockScreenState();
+// }
+//
+// class _StockScreenState extends State<StockScreen> {
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       backgroundColor: const Color(0xFFF6F6F6),
+//       appBar: AppBar(
+//         title: const Text("Stock Details"),
+//         backgroundColor: Colors.indigo,
+//         foregroundColor: Colors.white,
+//       ),
+//       body: StreamBuilder<QuerySnapshot>(
+//         stream: FirebaseFirestore.instance.collection('products').snapshots(),
+//         builder: (context, snapshot) {
+//           if (snapshot.connectionState == ConnectionState.waiting) {
+//             return const Center(child: CircularProgressIndicator());
+//           }
+//           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+//             return const Center(child: Text("No products available"));
+//           }
+//
+//           final products = snapshot.data!.docs;
+//
+//           return ListView.builder(
+//             padding: const EdgeInsets.all(16),
+//             itemCount: products.length,
+//             itemBuilder: (context, index) {
+//               var product = products[index];
+//               return Container(
+//                 margin: const EdgeInsets.only(bottom: 12),
+//                 decoration: BoxDecoration(
+//                   color: Colors.white,
+//                   borderRadius: BorderRadius.circular(12),
+//                   boxShadow: [
+//                     BoxShadow(
+//                       color: Colors.grey.withOpacity(0.1),
+//                       spreadRadius: 1,
+//                       blurRadius: 4,
+//                       offset: const Offset(0, 3),
+//                     )
+//                   ],
+//                 ),
+//                 child: ExpansionTile(
+//                   title: Text(
+//                     "${product['name']} (${product['code']})",
+//                     style: const TextStyle(fontWeight: FontWeight.bold),
+//                   ),
+//                   children: [
+//                     Container(
+//                       color: Colors.grey.shade100,
+//                       padding: const EdgeInsets.all(12),
+//                       child: Column(
+//                         children: [
+//                           _buildRow("Stock", "${product['stock']} units"),
+//                           _buildRow("Unit Price", "₹${product['price']}"),
+//                           if (product['category'] != null)
+//                             _buildRow("Category", product['category']),
+//                           _buildRow(
+//                               "Last Updated",
+//                               DateFormat('dd MMM yyyy').format(
+//                                   (product['updatedAt'] as Timestamp).toDate())),
+//                         ],
+//                       ),
+//                     ),
+//                   ],
+//                 ),
+//               );
+//             },
+//           );
+//         },
+//       ),
+//     );
+//   }
+//
+//   Widget _buildRow(String label, String value) {
+//     return Padding(
+//       padding: const EdgeInsets.symmetric(vertical: 6),
+//       child: Row(
+//         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//         children: [
+//           Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+//           Text(value, style: const TextStyle(color: Colors.black87)),
+//         ],
+//       ),
+//     );
+//   }
+// }
