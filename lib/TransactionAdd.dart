@@ -179,16 +179,18 @@ class _TransactionAddState extends State<TransactionAdd> {
                       FirebaseFirestore.instance
                           .collection('transactions')
                           .add(
-                            {
-                              'product': _productController.text,
-                              'quantity': int.parse(_quantityController.text),
-                              'unitPrice': double.parse(_unitPriceController.text),
-                              'party': _partyController.text,
-                              'date': DateFormat('dd-MM-yyyy').parse(_dateController.text),
-                              'type': _typeController.text,
-                              'status': _statusController.text,
-                              'timestamp': DateTime.now(),
-                            }
+                          {
+                            'product': _productController.text,
+                            'quantity': int.parse(_quantityController.text),
+                            'unitPrice': double.parse(
+                                _unitPriceController.text),
+                            'party': _partyController.text,
+                            'date': DateFormat('dd-MM-yyyy').parse(
+                                _dateController.text),
+                            'type': _typeController.text,
+                            'status': _statusController.text,
+                            'timestamp': DateTime.now(),
+                          }
                           ).then((value) {
                            Fluttertoast.showToast(msg: "Transaction Added",
                             toastLength: Toast.LENGTH_SHORT,
