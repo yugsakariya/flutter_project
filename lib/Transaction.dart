@@ -16,10 +16,12 @@ class _TransactionScreenState extends State<TransactionScreen> {
 
 
   void _updateTransaction(String docId){
-    Transactionupdate(docRef: 'docId');
+    showDialog(context: context, builder: (context) {
+      return Transactionupdate(docRef: docId);
+    });
   }
   void _deleteTransaction(String docId) {
-    FirebaseFirestore.instance.collection('transaction').doc(docId).delete().then((_)=> Navigator.pop(context)).catchError((error) {
+    FirebaseFirestore.instance.collection('transactions').doc(docId).delete().then((_)=> Navigator.pop(context)).catchError((error) {
       Fluttertoast.showToast(
         msg: "Failed to delete transaction: $error",
         toastLength: Toast.LENGTH_SHORT,
@@ -138,6 +140,11 @@ class _TransactionScreenState extends State<TransactionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFFF6F6F6),
+        appBar: AppBar(
+          title: Text("Transactions"),
+          backgroundColor: Colors.indigo,
+          foregroundColor: Colors.white,
+        ),
       floatingActionButton: FloatingActionButton(
           backgroundColor: Colors.indigo,
           child: const Icon(Icons.add, color: Colors.white),
@@ -151,18 +158,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text('Transactions',
-                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                  ),
-                  // IconButton(
-                  //   icon: Icon(Icons.filter_alt_outlined),
-                  //   onPressed: _openFilterSheet,
-                  // )
-                ],
-              ),
+
               SizedBox(height: 16),
               TextField(
                 controller: _searchController,
@@ -299,7 +295,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
                                         tooltip: "Update Transaction",
                                       ),
                                       IconButton(onPressed: () {
-                                        _showDeleteDialog(doc['index']);
+                                        _showDeleteDialog(doc.id);
                                       },
                                         icon: Icon(Icons.delete),
                                         tooltip: "Delete Transaction",

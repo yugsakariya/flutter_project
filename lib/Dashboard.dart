@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_project/ProductList.dart';
+import 'package:flutter_project/Profile.dart';
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
@@ -20,17 +21,16 @@ class _DashboardState extends State<Dashboard> {
         title: Text("Dashboard"),
         titleTextStyle: TextStyle(
           fontSize: 22,
-          fontWeight: FontWeight.bold,
           color: Colors.white,
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.account_circle, size: 28),
+          icon: Icon(Icons.account_circle, size: 28,color: Colors.white,),
             tooltip: 'Profile',
             onPressed: () {
-              // Add navigation or action for profile
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Profile tapped')),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => Profile()),
               );
             },
           ),

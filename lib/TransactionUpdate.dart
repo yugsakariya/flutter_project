@@ -12,14 +12,16 @@ class Transactionupdate extends StatefulWidget {
 }
 class _TransactionupdateState extends State<Transactionupdate> {
   final _productController = TextEditingController();
-  final _typeController = TextEditingController();
+  // final _typeController = TextEditingController();
   final _quantityController = TextEditingController();
   final _unitPriceController = TextEditingController();
   // final _totalController = TextEditingController();
   final _dateController = TextEditingController();
   final _partyController = TextEditingController();
-  final _statusController = TextEditingController();
+  // final _statusController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  String _type = 'Purchase'; // Default value
+  String _status = 'Paid'; // Default value
   @override
  void initState() {
     super.initState();
@@ -34,17 +36,23 @@ class _TransactionupdateState extends State<Transactionupdate> {
 
       if (docData.exists) {
         _productController.text = docData["product"] ?? '';
-        _typeController.text = docData["type"] ?? '';
+         // _type = docData["type"] ?? '';
         _quantityController.text = docData["quantity"]?.toString() ?? '';
-        _unitPriceController.text = docData["price"]?.toString() ?? '';
-        _dateController.text = docData["description"] ?? '';
-        _partyController.text = docData["supplier"] ?? '';
-        _statusController.text = docData["status"] ?? '';
-        
+        _unitPriceController.text = docData["unitPrice"]?.toString() ?? '';
+        _dateController.text = DateFormat('dd-MM-yyyy').format(docData['date'].toDate())?? '';
+        _partyController.text = docData["party"] ?? '';
+        // _status = docData["status"] ?? '';
+        var _type = docData["type"] ?? '' ;
+        var _status = docData["status"] ?? '';
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading product data: $e')),
+      Fluttertoast.showToast(msg: "Error loading transaction data: $e",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        timeInSecForIosWeb: 1,
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
+        fontSize: 16.0,
       );
     }
   }
@@ -138,7 +146,7 @@ class _TransactionupdateState extends State<Transactionupdate> {
                 },
               ),
               DropdownButtonFormField<String>(
-                value: _typeController.text,
+                value: _type,
                 items: ['Purchase', 'Sale'].map((type) {
                   return DropdownMenuItem(
                     value: type,
@@ -146,7 +154,7 @@ class _TransactionupdateState extends State<Transactionupdate> {
                   );
                 }).toList(),
                 onChanged: (value) {
-                  setState(() => _typeController.text = value!);
+                  setState(() => _type = value!);
                 },
                 decoration: InputDecoration(
                   labelText: "Type",
@@ -160,7 +168,7 @@ class _TransactionupdateState extends State<Transactionupdate> {
                 },
               ),
               DropdownButtonFormField<String>(
-                value: _statusController.text,
+                value: _status,
                 items: ['Paid', 'Due'].map((status) {
                   return DropdownMenuItem(
                     value: status,
@@ -168,7 +176,7 @@ class _TransactionupdateState extends State<Transactionupdate> {
                   );
                 }).toList(),
                 onChanged: (value) {
-                  setState(() => _statusController.text = value!);
+                  setState(() => _status = value!);
                 },
                 decoration: InputDecoration(
                   labelText: "Status",
@@ -200,12 +208,12 @@ class _TransactionupdateState extends State<Transactionupdate> {
                           .doc(widget.docRef)
                           .update({
                         "product": _productController.text,
-                        "type": _typeController.text,
+                        "type": _type,
                         "quantity": int.parse(_quantityController.text),
-                        "price": double.parse(_unitPriceController.text),
+                        "unitPrice": double.parse(_unitPriceController.text),
                         "description": _dateController.text,
-                        "supplier": _partyController.text,
-                        "status": _statusController.text,
+                        "party": _partyController.text,
+                        "status": _status,
                       }).then((_) {
                         Fluttertoast.showToast(
                           msg: "Transaction updated successfully",
