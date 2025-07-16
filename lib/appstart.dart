@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_project/Dashboard.dart';
-import 'package:flutter_project/ProductList.dart';
+import 'package:flutter_project/Stocks.dart';
 import 'package:flutter_project/Transaction.dart';
 
 class Appstart extends StatefulWidget {

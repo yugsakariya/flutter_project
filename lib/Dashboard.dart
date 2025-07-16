@@ -1,6 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_project/ProductList.dart';
+import 'package:flutter_project/Stocks.dart';
 import 'package:flutter_project/Profile.dart';
+import 'package:intl/intl.dart';
+
+import 'Transaction.dart';
 
 class Dashboard extends StatefulWidget {
   const Dashboard({super.key});
@@ -25,13 +29,13 @@ class _DashboardState extends State<Dashboard> {
         ),
         actions: [
           IconButton(
-          icon: Icon(Icons.account_circle, size: 28,color: Colors.white,),
+            icon: Icon(Icons.account_circle, size: 28,color: Colors.white,),
             tooltip: 'Profile',
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => Profile()),
-              );
+              // Navigator.push(
+              //   context,
+              //   MaterialPageRoute(builder: (context) => Profile()),
+              // );
             },
           ),
         ],
@@ -58,13 +62,49 @@ class _DashboardState extends State<Dashboard> {
             ),
 
             SizedBox(height: 30),
+            Row(
+              children: [
+                _buildSectionTitle("Recent Transactions"),
+                Spacer(flex: 1),
+                TextButton(onPressed: (){Navigator.push(context, MaterialPageRoute(builder: (_)=>TransactionScreen()));},
+                    child: Text("View More "))
+              ],
+            ),
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection("transactions")
+                  .orderBy("timestamp", descending: true)
+                  .limit(3)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                // Handle loading state
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Center(child: Text('No transactions found'));
+                }
+                if (snapshot.hasData){
+                  print(snapshot.data!.docs.map((doc)=>doc.data()).toList());
+                }
+                List<Map<String, dynamic>> transactions = [];
+                for (var doc in snapshot.data!.docs) {
+                  transactions.add({
+                    "title": doc['product'] ?? 'Unknown Product',
+                    "amount": "₹${doc['unitPrice'] ?? '0'}",
+                    "date": (doc['date'] != null && doc['date'] is Timestamp)
+                        ? DateFormat('dd-MM-yyyy').format(doc['date'].toDate())
+                        : 'No Date'
+                  });
+                }
 
-            // Recent Transactions
-            _buildSectionTitle("Recent Transactions"),
-            _buildRecentList([
-              {"title": "Chilli Purchase", "amount": "- ₹2000", "date": "01 Jul 2025"},
-              {"title": "Onion Sale", "amount": "+ ₹1200", "date": "30 Jun 2025"},
-            ]),
+                return _buildRecentList(transactions);
+              },
+            ),
+
             SizedBox(height: 24),
 
             // Recent Billing
@@ -78,6 +118,7 @@ class _DashboardState extends State<Dashboard> {
       ),
     );
   }
+
   Widget _buildSummaryCard(String title, String count, Color color, IconData icon) {
     return Expanded(
       child: Card(
@@ -110,7 +151,7 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  Widget _buildRecentList(List<Map<String, String>> items) {
+  Widget _buildRecentList(List<Map<String, dynamic>> items) {
     return Column(
       children: items.map((item) {
         return Card(

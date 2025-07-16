@@ -1,9 +1,9 @@
-// import 'package:Project/ProductList.dart';
+// import 'package:Project/Stocks.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_project/Dashboard.dart';
 import 'package:flutter_project/appstart.dart';
 import 'package:flutter_project/main.dart';
-import 'ProductList.dart';
+import 'Stocks.dart';
 
 class Loginscreen extends StatefulWidget {
   Loginscreen({super.key});

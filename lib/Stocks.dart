@@ -1,38 +1,36 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-class StockScreen extends StatelessWidget {
+class StockScreen extends StatefulWidget {
   const StockScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // ✅ Static product list
-    final List<Map<String, dynamic>> products = [
-      {
-        'name': 'Laptop',
-        'totalStock': 150,
-        'purchaseStock': 200,
-        'saleStock': 50,
-      },
-      {
-        'name': 'Mobile',
-        'totalStock': 300,
-        'purchaseStock': 350,
-        'saleStock': 50,
-      },
-      {
-        'name': 'Keyboard',
-        'totalStock': 75,
-        'purchaseStock': 90,
-        'saleStock': 15,
-      },
-      {
-        'name': 'Mouse',
-        'totalStock': 100,
-        'purchaseStock': 120,
-        'saleStock': 20,
-      },
-    ];
+  State<StockScreen> createState() => _StockScreenState();
+}
 
+class _StockScreenState extends State<StockScreen> {
+  Map <String, dynamic> _processStockData(QuerySnapshot snapshots){
+    Map<String, dynamic> products={};
+    for(var doc in snapshots.docs) {
+      var productName = doc['product'];
+      if (!products.containsKey(productName)) {
+        products[productName] = {
+          'name': productName,
+          'purchaseStock': 0,
+          'saleStock': 0,
+        };
+      }
+      if (doc['type'] == 'Purchase') {
+        products[productName]['purchaseStock'] += doc['quantity'];
+      } else if (doc['type'] == 'Sale') {
+        products[productName]['saleStock'] += doc['quantity'];
+      }
+      products[productName]['totalStock'] = products[productName]['purchaseStock'] - products[productName]['saleStock'];
+    }
+    return products;
+  }
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF6F6F6),
       appBar: AppBar(
@@ -40,11 +38,31 @@ class StockScreen extends StatelessWidget {
         backgroundColor: Colors.indigo,
         foregroundColor: Colors.white,
       ),
-      body: ListView.builder(
+      body: StreamBuilder(
+      stream: FirebaseFirestore.instance.collection("transactions").snapshots(),
+      builder: (context,snapshot){
+        if(snapshot.hasError){
+          return Center(
+            child: Text("Error ${snapshot.error}"),
+          );
+        }
+        if (snapshot.connectionState == ConnectionState.waiting){
+          return Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+        Map <String, dynamic> products = _processStockData(snapshot.data!);
+        if(products.isEmpty){
+          return Center(
+            child:Text("No stocks available",style: TextStyle(fontSize:18,color: Colors.grey),),
+          );
+        }
+        return ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: products.length,
         itemBuilder: (context, index) {
-          var product = products[index];
+          String productKey = products.keys.elementAt(index);
+          var product = products[productKey];
           return Container(
             margin: const EdgeInsets.only(bottom: 14),
             decoration: BoxDecoration(
@@ -102,7 +120,9 @@ class StockScreen extends StatelessWidget {
             ),
           );
         },
-      ),
+      );
+      }
+      )
     );
   }
 

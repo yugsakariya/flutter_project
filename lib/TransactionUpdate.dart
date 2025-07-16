@@ -62,184 +62,186 @@ class _TransactionupdateState extends State<Transactionupdate> {
         title: Text("Update Transaction"),
         content: Form(
           key: _formKey,
-          child: Column(
-            children: [
-              TextFormField(
-                controller: _productController,
-                decoration: InputDecoration(
-                  label: Text("Product"),
-                  hintText: "Enter Product name",
-                ),
-                validator: (value) {
-                  if (value!.isEmpty) {
-                    return "Please enter product name";
-                  }
-                  return null;
-                },
-              ),
-              TextFormField(
-                controller: _quantityController,
-                decoration: InputDecoration(
-                  label: Text("Quantity"),
-                  hintText: "Enter Quantity",
-                ),
-                validator: (value) {
-                  if (value!.isEmpty) {
-                    return "Please enter quantity";
-                  }
-                  return null;
-                },
-              ),
-              TextFormField(
-                controller: _unitPriceController,
-                decoration: InputDecoration(
-                  label: Text("Unit Price"),
-                  hintText: "Enter Unit Price",
-                ),
-                validator: (value) {
-                  if (value!.isEmpty) {
-                    return "Please enter unit price";
-                  }
-                  return null;
-                },
-              ),
-              TextFormField(
-                controller: _partyController,
-                decoration: InputDecoration(
-                  label: Text("Party"),
-                  hintText: "Enter Party Name",
-                ),
-                validator: (value) {
-                  if (value!.isEmpty) {
-                    return "Please enter party name";
-                  }
-                  return null;
-                },
-              ),
-              TextFormField(
-                controller: _dateController,
-                decoration: InputDecoration(
-                  labelText: "Date",
-                  hintText: "Select Date",
-                  suffixIcon: IconButton(
-                    icon: Icon(Icons.calendar_today),
-                    onPressed: () {
-                      showDatePicker(
-                        context: context,
-                        initialDate: DateTime.now(),
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      ).then((pickedDate) {
-                        if (pickedDate != null) {
-                          _dateController.text =
-                              DateFormat('dd-MM-yyyy').format(pickedDate);
-                        }
-                      });
-                    },
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: _productController,
+                  decoration: InputDecoration(
+                    label: Text("Product"),
+                    hintText: "Enter Product name",
                   ),
-                ),
-                validator: (value) {
-                  if (value!.isEmpty) {
-                    return "Please select date";
-                  }
-                  return null;
-                },
-              ),
-              DropdownButtonFormField<String>(
-                value: _type,
-                items: ['Purchase', 'Sale'].map((type) {
-                  return DropdownMenuItem(
-                    value: type,
-                    child: Text(type),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() => _type = value!);
-                },
-                decoration: InputDecoration(
-                  labelText: "Type",
-                  hintText: "Select Type",
-                ),
-                validator: (value) {
-                  if (value == null) {
-                    return "Please select type";
-                  }
-                  return null;
-                },
-              ),
-              DropdownButtonFormField<String>(
-                value: _status,
-                items: ['Paid', 'Due'].map((status) {
-                  return DropdownMenuItem(
-                    value: status,
-                    child: Text(status),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() => _status = value!);
-                },
-                decoration: InputDecoration(
-                  labelText: "Status",
-                  hintText: "Select Status",
-                ),
-                validator: (value) {
-                  if (value == null) {
-                    return "Please select status";
-                  }
-                  return null;
-                },
-              ),
-              SizedBox(height: 20),
-              Row(
-                children: [
-                  ElevatedButton(onPressed: () {
-                    Navigator.pop(context);
-                  },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey,
-                      padding: EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: Text("Cancel", style: TextStyle(color: Colors.white)),
-                  ),
-                  ElevatedButton(onPressed: (){
-                    if(_formKey.currentState!.validate()){
-                      FirebaseFirestore.instance
-                          .collection('transactions')
-                          .doc(widget.docRef)
-                          .update({
-                        "product": _productController.text,
-                        "type": _type,
-                        "quantity": int.parse(_quantityController.text),
-                        "unitPrice": double.parse(_unitPriceController.text),
-                        "description": _dateController.text,
-                        "party": _partyController.text,
-                        "status": _status,
-                      }).then((_) {
-                        Fluttertoast.showToast(
-                          msg: "Transaction updated successfully",
-                          toastLength: Toast.LENGTH_SHORT,
-                          gravity: ToastGravity.BOTTOM,
-                          timeInSecForIosWeb: 1,
-                          backgroundColor: Colors.green,
-                          textColor: Colors.white,
-                          fontSize: 16.0,
-                        );
-                        Navigator.pop(context);
-                      }).catchError((error) {
-                        Fluttertoast.showToast(msg: "Error:$error",
-                          toastLength: Toast.LENGTH_SHORT,
-                          gravity: ToastGravity.BOTTOM,
-                          timeInSecForIosWeb: 1,
-                          backgroundColor: Colors.red,
-                          textColor: Colors.white,
-                          fontSize: 16.0,
-                        );
-                      });
+                  validator: (value) {
+                    if (value!.isEmpty) {
+                      return "Please enter product name";
                     }
-                  }, child: Text("Submit"))
-                ],
-              ),
-            ],
+                    return null;
+                  },
+                ),
+                TextFormField(
+                  controller: _quantityController,
+                  decoration: InputDecoration(
+                    label: Text("Quantity"),
+                    hintText: "Enter Quantity",
+                  ),
+                  validator: (value) {
+                    if (value!.isEmpty) {
+                      return "Please enter quantity";
+                    }
+                    return null;
+                  },
+                ),
+                TextFormField(
+                  controller: _unitPriceController,
+                  decoration: InputDecoration(
+                    label: Text("Unit Price"),
+                    hintText: "Enter Unit Price",
+                  ),
+                  validator: (value) {
+                    if (value!.isEmpty) {
+                      return "Please enter unit price";
+                    }
+                    return null;
+                  },
+                ),
+                TextFormField(
+                  controller: _partyController,
+                  decoration: InputDecoration(
+                    label: Text("Party"),
+                    hintText: "Enter Party Name",
+                  ),
+                  validator: (value) {
+                    if (value!.isEmpty) {
+                      return "Please enter party name";
+                    }
+                    return null;
+                  },
+                ),
+                TextFormField(
+                  controller: _dateController,
+                  decoration: InputDecoration(
+                    labelText: "Date",
+                    hintText: "Select Date",
+                    suffixIcon: IconButton(
+                      icon: Icon(Icons.calendar_today),
+                      onPressed: () {
+                        showDatePicker(
+                          context: context,
+                          initialDate: DateTime.now(),
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        ).then((pickedDate) {
+                          if (pickedDate != null) {
+                            _dateController.text =
+                                DateFormat('dd-MM-yyyy').format(pickedDate);
+                          }
+                        });
+                      },
+                    ),
+                  ),
+                  validator: (value) {
+                    if (value!.isEmpty) {
+                      return "Please select date";
+                    }
+                    return null;
+                  },
+                ),
+                DropdownButtonFormField<String>(
+                  value: _type,
+                  items: ['Purchase', 'Sale'].map((type) {
+                    return DropdownMenuItem(
+                      value: type,
+                      child: Text(type),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() => _type = value!);
+                  },
+                  decoration: InputDecoration(
+                    labelText: "Type",
+                    hintText: "Select Type",
+                  ),
+                  validator: (value) {
+                    if (value == null) {
+                      return "Please select type";
+                    }
+                    return null;
+                  },
+                ),
+                DropdownButtonFormField<String>(
+                  value: _status,
+                  items: ['Paid', 'Due'].map((status) {
+                    return DropdownMenuItem(
+                      value: status,
+                      child: Text(status),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() => _status = value!);
+                  },
+                  decoration: InputDecoration(
+                    labelText: "Status",
+                    hintText: "Select Status",
+                  ),
+                  validator: (value) {
+                    if (value == null) {
+                      return "Please select status";
+                    }
+                    return null;
+                  },
+                ),
+                SizedBox(height: 20),
+                Row(
+                  children: [
+                    ElevatedButton(onPressed: () {
+                      Navigator.pop(context);
+                    },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey,
+                        padding: EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: Text("Cancel", style: TextStyle(color: Colors.white)),
+                    ),
+                    ElevatedButton(onPressed: (){
+                      if(_formKey.currentState!.validate()){
+                        FirebaseFirestore.instance
+                            .collection('transactions')
+                            .doc(widget.docRef)
+                            .update({
+                          "product": _productController.text,
+                          "type": _type,
+                          "quantity": int.parse(_quantityController.text),
+                          "unitPrice": double.parse(_unitPriceController.text),
+                          "description": _dateController.text,
+                          "party": _partyController.text,
+                          "status": _status,
+                        }).then((_) {
+                          Fluttertoast.showToast(
+                            msg: "Transaction updated successfully",
+                            toastLength: Toast.LENGTH_SHORT,
+                            gravity: ToastGravity.BOTTOM,
+                            timeInSecForIosWeb: 1,
+                            backgroundColor: Colors.green,
+                            textColor: Colors.white,
+                            fontSize: 16.0,
+                          );
+                          Navigator.pop(context);
+                        }).catchError((error) {
+                          Fluttertoast.showToast(msg: "Error:$error",
+                            toastLength: Toast.LENGTH_SHORT,
+                            gravity: ToastGravity.BOTTOM,
+                            timeInSecForIosWeb: 1,
+                            backgroundColor: Colors.red,
+                            textColor: Colors.white,
+                            fontSize: 16.0,
+                          );
+                        });
+                      }
+                    }, child: Text("Submit"))
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       );
