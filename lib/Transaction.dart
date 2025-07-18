@@ -123,16 +123,16 @@ class _TransactionScreenState extends State<TransactionScreen> {
   //   );
   // }
   final _searchController = TextEditingController();
-  // ignore: prefer_final_fields
   String _searchQuery='';
   Stream<QuerySnapshot> _getTransactionStream(){
    if(_searchQuery.isEmpty){
      return FirebaseFirestore.instance.collection('transactions').snapshots();
-   }else{
+   }
+   else{
      return FirebaseFirestore.instance
          .collection('transactions')
-         .where('',isGreaterThanOrEqualTo: _searchQuery)
-         .where('', isLessThanOrEqualTo: '$_searchQuery\uf8ff')
+         .where('product',isGreaterThanOrEqualTo: _searchQuery)
+         .where('product', isLessThanOrEqualTo: '$_searchQuery\uf8ff')
          .snapshots();
    }
   }
@@ -169,6 +169,12 @@ class _TransactionScreenState extends State<TransactionScreen> {
                   filled: true,
                   fillColor: Colors.white,
                 ),
+                onChanged: (value){
+                  setState(() {
+                    _searchQuery = value;
+                  });
+                  print(_searchQuery);
+                },
               ),
               SizedBox(height: 16),
               Expanded(
@@ -260,7 +266,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
                                   Row(children: [
                                     Icon(Icons.calendar_today, size: 18),
                                     SizedBox(width: 5),
-                                    Text("Date: ${doc['date'].toDate().day} ${DateFormat('MMM').format(doc['date'].toDate())} ${doc['date'].toDate().year}")
+                                    Text("Date: ${doc['date'].toDate().day} ${DateFormat('MMM').format(doc['date'].toDate())}.to ${doc['date'].toDate().year}")
                                   ]),
                                   Row(children: [
                                     Icon(Icons.local_offer, size: 18),

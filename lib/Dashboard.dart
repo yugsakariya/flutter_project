@@ -32,10 +32,10 @@ class _DashboardState extends State<Dashboard> {
             icon: Icon(Icons.account_circle, size: 28,color: Colors.white,),
             tooltip: 'Profile',
             onPressed: () {
-              // Navigator.push(
-              //   context,
-              //   MaterialPageRoute(builder: (context) => Profile()),
-              // );
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => Profile()),
+              );
             },
           ),
         ],
