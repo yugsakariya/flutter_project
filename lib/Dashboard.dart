@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_project/Stocks.dart';
 import 'package:flutter_project/Profile.dart';
+import 'package:flutter_project/LowStocks.dart';
 import 'package:intl/intl.dart';
 
 import 'Transaction.dart';
@@ -74,8 +75,8 @@ class _DashboardState extends State<Dashboard> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildSummaryCard("Low Stock", "5", Colors.redAccent, Icons.warning),
-                  _buildSummaryCard("Stock", "24", Colors.indigo, Icons.shopping_cart),
+                  _buildLowStockCard(),
+                  _buildStockCard(),
                 ],
               ),
               SizedBox(height: 16),
@@ -125,7 +126,7 @@ class _DashboardState extends State<Dashboard> {
                   List<Map<String, dynamic>> transactions = [];
                   for (var doc in snapshot.data!.docs) {
                     transactions.add({
-                      "title": doc['product'] ?? 'Unknown Product',
+                      "title": _capitalizeFirstLetter(doc['product'] ?? 'Unknown Product'),
                       "amount": "₹${doc['unitPrice'] ?? '0'}",
                       "date": (doc['date'] != null && doc['date'] is Timestamp)
                           ? DateFormat('dd-MM-yyyy').format(doc['date'].toDate())
@@ -174,6 +175,96 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
+  Widget _buildLowStockCard() {
+    return Expanded(
+      child: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection("stocks")
+            .where('quantity', isLessThanOrEqualTo: 10)
+            .snapshots(),
+        builder: (context, snapshot) {
+          int lowStockCount = 0;
+          if (snapshot.hasData) {
+            lowStockCount = snapshot.data!.docs.length;
+          }
+
+          return GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const LowStocks()),
+              );
+            },
+            child: Card(
+              elevation: 3,
+              margin: EdgeInsets.all(8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+                child: Column(
+                  children: [
+                    Icon(Icons.warning, color: Colors.redAccent, size: 30),
+                    SizedBox(height: 10),
+                    Text("Low Stock", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    SizedBox(height: 6),
+                    Text(
+                      lowStockCount.toString(),
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.redAccent)
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildStockCard() {
+    return Expanded(
+      child: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection("stocks")
+            .snapshots(),
+        builder: (context, snapshot) {
+          int totalStockCount = 0;
+          if (snapshot.hasData) {
+            totalStockCount = snapshot.data!.docs.length;
+          }
+
+          return GestureDetector(
+            onTap: () {
+              if (widget.onTabChange != null) {
+                widget.onTabChange!(1); // Stocks tab index
+              }
+            },
+            child: Card(
+              elevation: 3,
+              margin: EdgeInsets.all(8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+                child: Column(
+                  children: [
+                    Icon(Icons.shopping_cart, color: Colors.indigo, size: 30),
+                    SizedBox(height: 10),
+                    Text("Stock", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    SizedBox(height: 6),
+                    Text(
+                      totalStockCount.toString(),
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo)
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildSectionTitle(String title) {
     return Align(
       alignment: Alignment.centerLeft,
@@ -201,5 +292,10 @@ class _DashboardState extends State<Dashboard> {
         );
       }).toList(),
     );
+  }
+
+  String _capitalizeFirstLetter(String text) {
+    if (text.isEmpty) return text;
+    return text[0].toUpperCase() + text.substring(1).toLowerCase();
   }
 }

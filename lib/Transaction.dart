@@ -1,10 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_project/TransactionAdd.dart';
 import 'package:flutter_project/TransactionUpdate.dart';
 import 'package:flutter_project/Dashboard.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
-import 'TransactionAdd.dart';
+// import 'TransactionAdd.dart';
 
 
 class TransactionScreen extends StatefulWidget {
@@ -36,8 +37,98 @@ class _TransactionScreenState extends State<TransactionScreen> {
       return Transactionupdate(docRef: docId);
     });
   }
-  void _deleteTransaction(String docId) {
-    FirebaseFirestore.instance.collection('transactions').doc(docId).delete().then((_)=> Navigator.pop(context)).catchError((error) {
+  void _deleteTransaction(String docId) async {
+    try {
+      // First, get the transaction document to access its data
+      DocumentSnapshot transactionDoc = await FirebaseFirestore.instance
+          .collection('transactions')
+          .doc(docId)
+          .get();
+
+      if (!transactionDoc.exists) {
+        Fluttertoast.showToast(
+            msg: "Transaction not found",
+            toastLength: Toast.LENGTH_SHORT,
+            gravity: ToastGravity.BOTTOM,
+            backgroundColor: Colors.red,
+            textColor: Colors.white,
+            fontSize: 16.0
+        );
+        return;
+      }
+
+      // Get transaction data
+      final transactionData = transactionDoc.data() as Map<String, dynamic>;
+      final String product = transactionData['product'];
+      final String type = transactionData['type'];
+      final int quantity = transactionData['quantity'];
+
+      // Query the stocks collection to find the document with matching product name
+      QuerySnapshot stockQuery = await FirebaseFirestore.instance
+          .collection('stocks')
+          .where('product', isEqualTo: product) // Assuming the field name is 'product'
+          .limit(1)
+          .get();
+
+      if (stockQuery.docs.isEmpty) {
+        Fluttertoast.showToast(
+            msg: "Stock record not found for product: $product",
+            toastLength: Toast.LENGTH_SHORT,
+            gravity: ToastGravity.BOTTOM,
+            backgroundColor: Colors.orange,
+            textColor: Colors.white,
+            fontSize: 16.0
+        );
+        // Still delete the transaction even if stock is not found
+        await FirebaseFirestore.instance.collection('transactions').doc(docId).delete();
+        Navigator.pop(context);
+        return;
+      }
+
+      // Get the stock document reference
+      DocumentSnapshot stockDoc = stockQuery.docs.first;
+      String stockDocId = stockDoc.id;
+
+      // Use a batch to ensure both operations succeed or fail together
+      WriteBatch batch = FirebaseFirestore.instance.batch();
+
+      // Delete the transaction
+      batch.delete(FirebaseFirestore.instance.collection('transactions').doc(docId));
+
+      // Update stock based on transaction type
+      DocumentReference stockRef = FirebaseFirestore.instance
+          .collection('stocks')
+          .doc(stockDocId);
+
+      if (type == 'Purchase') {
+        // If it was a purchase, we need to subtract the quantity from stock
+        // (reversing the original addition)
+        batch.update(stockRef, {
+          'quantity': FieldValue.increment(-quantity),
+        });
+      } else if (type == 'Sale') {
+        // If it was a sale, we need to add the quantity back to stock
+        // (reversing the original subtraction)
+        batch.update(stockRef, {
+          'quantity': FieldValue.increment(quantity),
+        });
+      }
+
+      // Execute the batch
+      await batch.commit();
+
+      Navigator.pop(context);
+
+      Fluttertoast.showToast(
+          msg: "Transaction deleted and stock updated successfully",
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+          backgroundColor: Colors.green,
+          textColor: Colors.white,
+          fontSize: 16.0
+      );
+
+    } catch (error) {
       Fluttertoast.showToast(
           msg: "Failed to delete transaction: $error",
           toastLength: Toast.LENGTH_SHORT,
@@ -46,7 +137,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
           textColor: Colors.white,
           fontSize: 16.0
       );
-    });
+    }
   }
   void _showDeleteDialog(String docId) {
     showDialog(
@@ -138,6 +229,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
   //     },
   //   );
   // }
+
   final _searchController = TextEditingController();
   String _searchQuery='';
   Stream<QuerySnapshot> _getTransactionStream(){
@@ -151,6 +243,17 @@ class _TransactionScreenState extends State<TransactionScreen> {
           .where('product', isLessThanOrEqualTo: '$_searchQuery\uf8ff')
           .snapshots();
     }
+  }
+  @override
+  void dispose(){
+    _productController.dispose();
+    _typeController.dispose();
+    _quantityController.dispose();
+    _unitPriceController.dispose();
+    _dateController.dispose();
+    _partyController.dispose();
+    _statusController.dispose();
+    super.dispose();
   }
   @override
   Widget build(BuildContext context) {
@@ -175,203 +278,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
             child: const Icon(Icons.add, color: Colors.white),
             onPressed: () {
               showDialog(context: context, builder: (context) {
-                return AlertDialog(
-                  title: Text("Add Transaction"),
-                  content: Form(
-                    key: _formKey,
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          TextFormField(
-                            controller: _productController,
-                            decoration: InputDecoration(
-                              label: Text("Product"),
-                              hintText: "Enter Product name",
-                            ),
-                            validator: (value) {
-                              if (value!.isEmpty) {
-                                return "Please enter product name";
-                              }
-                              return null;
-                            },
-                          ),
-                          TextFormField(
-                            controller: _quantityController,
-                            decoration: InputDecoration(
-                              label: Text("Quantity"),
-                              hintText: "Enter Quantity",
-                            ),
-                            validator: (value) {
-                              if (value!.isEmpty) {
-                                return "Please enter quantity";
-                              }
-                              if (int.tryParse(value) == null){
-                                return "Please enter correct quantity";
-                              }
-                              return null;
-                            },
-                          ),
-                          TextFormField(
-                            controller: _unitPriceController,
-                            decoration: InputDecoration(
-                              label: Text("Unit Price"),
-                              hintText: "Enter Unit Price",
-                            ),
-                            validator: (value) {
-                              if (value!.isEmpty) {
-                                return "Please enter unit price";
-                              }
-                              if (double.tryParse(value) == null){
-                                return "Please enter correct unit price";
-                              }
-                              return null;
-                            },
-                          ),
-                          TextFormField(
-                            controller: _partyController,
-                            decoration: InputDecoration(
-                              label: Text("Party"),
-                              hintText: "Enter Party Name",
-                            ),
-                            validator: (value) {
-                              if (value!.isEmpty) {
-                                return "Please enter party name";
-                              }
-                              return null;
-                            },
-                          ),
-                          TextFormField(
-                            controller: _dateController,
-                            decoration: InputDecoration(
-                              labelText: "Date",
-                              hintText: "Select Date",
-                              suffixIcon: IconButton(
-                                icon: Icon(Icons.calendar_today),
-                                onPressed: () {
-                                  showDatePicker(
-                                    context: context,
-                                    initialDate: DateTime.now(),
-                                    firstDate: DateTime(2000),
-                                    lastDate: DateTime(2100),
-                                  ).then((pickedDate) {
-                                    if (pickedDate != null) {
-                                      _dateController.text =
-                                          DateFormat('dd-MM-yyyy').format(pickedDate);
-                                    }
-                                  });
-                                },
-                              ),
-                            ),
-                            validator: (value) {
-                              if (value!.isEmpty) {
-                                return "Please select date";
-                              }
-                              return null;
-                            },
-                          ),
-                          DropdownButtonFormField<String>(
-                            value: _typeController.text,
-                            items: ['Purchase', 'Sale'].map((type) {
-                              return DropdownMenuItem(
-                                value: type,
-                                child: Text(type),
-                              );
-                            }).toList(),
-                            onChanged: (value) {
-                              setState(() => _typeController.text = value!);
-                            },
-                            decoration: InputDecoration(
-                              labelText: "Type",
-                              hintText: "Select Type",
-                            ),
-                            validator: (value) {
-                              if (value == null) {
-                                return "Please select type";
-                              }
-                              return null;
-                            },
-                          ),
-                          DropdownButtonFormField<String>(
-                            value: _statusController.text,
-                            items: ['Paid', 'Due'].map((status) {
-                              return DropdownMenuItem(
-                                value: status,
-                                child: Text(status),
-                              );
-                            }).toList(),
-                            onChanged: (value) {
-                              setState(() => _statusController.text = value!);
-                            },
-                            decoration: InputDecoration(
-                              labelText: "Status",
-                              hintText: "Select Status",
-                            ),
-                            validator: (value) {
-                              if (value == null) {
-                                return "Please select status";
-                              }
-                              return null;
-                            },
-                          ),
-                          SizedBox(height: 20),
-                          Row(
-                            children: [
-                              ElevatedButton(onPressed: () {
-                                Navigator.pop(context);
-                              },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.grey,
-                                  padding: EdgeInsets.symmetric(vertical: 14),
-                                ),
-                                child: Text(
-                                    "Cancel", style: TextStyle(color: Colors.white)),
-                              ),
-                              ElevatedButton(onPressed: () {
-                                if (_formKey.currentState!.validate()) {
-                                  FirebaseFirestore.instance
-                                      .collection('transactions')
-                                      .add(
-                                      {
-                                        'product': _productController.text,
-                                        'quantity': int.parse(_quantityController.text),
-                                        'unitPrice': double.parse(
-                                            _unitPriceController.text),
-                                        'party': _partyController.text,
-                                        'date': DateFormat('dd-MM-yyyy').parse(
-                                            _dateController.text),
-                                        'type': _typeController.text,
-                                        'status': _statusController.text,
-                                        'timestamp': DateTime.now(),
-                                      }
-                                  ).then((value) {
-                                    Fluttertoast.showToast(msg: "Transaction Added",
-                                        toastLength: Toast.LENGTH_SHORT,
-                                        gravity: ToastGravity.BOTTOM,
-                                        backgroundColor: Colors.black,
-                                        textColor: Colors.white,
-                                        fontSize: 16.0
-                                    );
-                                    Navigator.pop(context);
-                                  }).catchError((error) {
-                                    Fluttertoast.showToast(
-                                        msg: "Failed to add transaction: $error",
-                                        toastLength: Toast.LENGTH_SHORT,
-                                        gravity: ToastGravity.BOTTOM,
-                                        backgroundColor: Colors.red,
-                                        textColor: Colors.white,
-                                        fontSize: 16.0
-                                    );
-                                  }
-                                  );
-                                }
-                              }, child: Text("Submit"))
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
+                return Transactionadd();
               });
             }
         ),
@@ -442,7 +349,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
                                             ),
                                             SizedBox(height: 12),
                                             SizedBox(width: 6),
-                                            Text(doc['product'],
+                                            Text(_capitalizeFirstLetter(doc['product']),
                                                 style: TextStyle(
                                                     fontWeight: FontWeight.bold,
                                                     fontSize: 16)),
@@ -544,5 +451,10 @@ class _TransactionScreenState extends State<TransactionScreen> {
         ),
       ),
     );
+  }
+
+  String _capitalizeFirstLetter(String text) {
+    if (text.isEmpty) return text;
+    return text[0].toUpperCase() + text.substring(1).toLowerCase();
   }
 }

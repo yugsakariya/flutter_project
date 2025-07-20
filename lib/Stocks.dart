@@ -10,26 +10,6 @@ class StockScreen extends StatefulWidget {
 }
 
 class _StockScreenState extends State<StockScreen> {
-  Map <String, dynamic> _processStockData(QuerySnapshot snapshots){
-    Map<String, dynamic> products={};
-    for(var doc in snapshots.docs) {
-      var productName = doc['product'];
-      if (!products.containsKey(productName)) {
-        products[productName] = {
-          'name': productName,
-          'purchaseStock': 0,
-          'saleStock': 0,
-        };
-      }
-      if (doc['type'] == 'Purchase') {
-        products[productName]['purchaseStock'] += doc['quantity'];
-      } else if (doc['type'] == 'Sale') {
-        products[productName]['saleStock'] += doc['quantity'];
-      }
-      products[productName]['totalStock'] = products[productName]['purchaseStock'] - products[productName]['saleStock'];
-    }
-    return products;
-  }
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -47,90 +27,126 @@ class _StockScreenState extends State<StockScreen> {
           backgroundColor: Colors.indigo,
           foregroundColor: Colors.white,
         ),
-        body: StreamBuilder(
-          stream: FirebaseFirestore.instance.collection("transactions").snapshots(),
-          builder: (context,snapshot){
-            if(snapshot.hasError){
-              return Center(
-                child: Text("Error  {snapshot.error}"),
-              );
-            }
-            if (snapshot.connectionState == ConnectionState.waiting){
-              return Center(
-                child: CircularProgressIndicator(),
-              );
-            }
-            Map <String, dynamic> products = _processStockData(snapshot.data!);
-            if(products.isEmpty){
-              return Center(
-                child:Text("No stocks available",style: TextStyle(fontSize:18,color: Colors.grey),),
-              );
-            }
-            return ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: products.length,
-              itemBuilder: (context, index) {
-                String productKey = products.keys.elementAt(index);
-                var product = products[productKey];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.15),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      )
-                    ],
+        body: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection("stocks").snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(
+                  child: Text("Error: ${snapshot.error}"),
+                );
+              }
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(),
+                );
+              }
+
+              if (snapshot.data?.docs.isEmpty ?? true) {
+                return const Center(
+                  child: Text(
+                    "No stocks available",
+                    style: TextStyle(fontSize: 18, color: Colors.grey),
                   ),
-                  child: Theme(
-                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                    child: ExpansionTile(
-                      tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      title: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            product['name'],
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 18),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.indigo.shade100,
-                              borderRadius: BorderRadius.circular(12),
+                );
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: snapshot.data!.docs.length,
+                itemBuilder: (context, index) {
+                  DocumentSnapshot stockDoc = snapshot.data!.docs[index];
+                  Map<String, dynamic> stockData = stockDoc.data() as Map<String, dynamic>;
+
+                  String productName = stockData['product'] ?? 'Unknown Product';
+                  int totalStock = stockData['quantity'] ?? 0;
+                  int purchaseStock = stockData['purchase'] ?? 0;
+                  int salesStock = stockData['sales'] ?? 0;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.15),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        )
+                      ],
+                    ),
+                    child: Theme(
+                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                      child: ExpansionTile(
+                        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        title: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _capitalizeFirstLetter(productName),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            child: Text(
-                              "Total:  ${product['totalStock']}",
-                              style: const TextStyle(color: Colors.indigo, fontSize: 14),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: totalStock >= 0
+                                    ? Colors.indigo.shade100
+                                    : Colors.red.shade100,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                "Stock: $totalStock",
+                                style: TextStyle(
+                                  color: totalStock >= 0 ? Colors.indigo : Colors.red,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        children: [
+                          Container(
+                            color: Colors.grey.shade50,
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              children: [
+                                _buildDetailRow(
+                                    Icons.shopping_cart,
+                                    "Total Purchase",
+                                    "$purchaseStock",
+                                    Colors.green
+                                ),
+                                const SizedBox(height: 10),
+                                _buildDetailRow(
+                                    Icons.sell,
+                                    "Total Sales",
+                                    "$salesStock",
+                                    Colors.red
+                                ),
+                                const SizedBox(height: 10),
+                                _buildDetailRow(
+                                    Icons.inventory,
+                                    "Available Stock",
+                                    "$totalStock",
+                                    totalStock >= 0 ? Colors.indigo : Colors.red
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
-                      children: [
-                        Container(
-                          color: Colors.grey.shade50,
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            children: [
-                              _buildDetailRow(Icons.shopping_cart, "Purchase Stock",
-                                  "  ${product['purchaseStock']}", Colors.green),
-                              const SizedBox(height: 10),
-                              _buildDetailRow(Icons.sell, "Sale Stock",
-                                  "  ${product['saleStock']}", Colors.red),
-                            ],
-                          ),
-                        ),
-                      ],
                     ),
-                  ),
-                );
-              },
-            );
-          }
+                  );
+                },
+              );
+            }
         ),
       ),
     );
@@ -147,10 +163,20 @@ class _StockScreenState extends State<StockScreen> {
             Text(label, style: const TextStyle(fontSize: 16)),
           ],
         ),
-        Text(value,
-            style: TextStyle(
-                color: color, fontWeight: FontWeight.bold, fontSize: 16)),
+        Text(
+          value,
+          style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 16
+          ),
+        ),
       ],
     );
+  }
+
+  String _capitalizeFirstLetter(String text) {
+    if (text.isEmpty) return text;
+    return text[0].toUpperCase() + text.substring(1).toLowerCase();
   }
 }

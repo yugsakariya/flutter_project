@@ -64,6 +64,10 @@ flutter_icons:
 flutter_native_splash:
   color: "#ffffff"
   image: assets/logo.jpg
+  android_12:
+    image: assets/logo.jpg
+    color: "#ffffff"
+  web: false
   
 # The following section is specific to Flutter packages.
 flutter:
