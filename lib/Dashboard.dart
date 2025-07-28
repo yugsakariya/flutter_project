@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_project/Stocks.dart';
 import 'package:flutter_project/Profile.dart';
 import 'package:flutter_project/LowStocks.dart';
+import 'package:flutter_project/login.dart';
+import 'package:flutter_project/main.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -41,13 +43,12 @@ class _DashboardState extends State<Dashboard> {
     ) ?? false; // Return false if dialog is dismissed
   }
 
-  // Logout function
+  // Fixed logout function
   Future<void> _logout() async {
     try {
       await FirebaseAuth.instance.signOut();
       // AuthWrapper will automatically handle the redirect to login screen
-      Navigator.pop(context);
-
+      // No need for manual navigation
     } catch (e) {
       print('Error logging out: $e');
       // Show error message to user
@@ -284,8 +285,8 @@ class _DashboardState extends State<Dashboard> {
                     Text("Low Stock", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                     SizedBox(height: 6),
                     Text(
-                      lowStockCount.toString(),
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.redAccent)
+                        lowStockCount.toString(),
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.redAccent)
                     ),
                   ],
                 ),
@@ -329,8 +330,8 @@ class _DashboardState extends State<Dashboard> {
                     Text("Stock", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                     SizedBox(height: 6),
                     Text(
-                      totalStockCount.toString(),
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo)
+                        totalStockCount.toString(),
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo)
                     ),
                   ],
                 ),
