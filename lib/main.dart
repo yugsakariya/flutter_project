@@ -53,7 +53,7 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver, TickerProviderStateMixin {
   int _selectedIndex = 0;
   ConnectionStatus _connectionStatus = ConnectionStatus.unknown;
   late final ConnectivityManager _connectivityManager;
@@ -61,14 +61,98 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Timer? _realTimeCheckTimer;
   Timer? _internetCheckTimer;
   bool _isRetrying = false;
-  bool _initialCheckComplete = false; // Add this flag
+  bool _initialCheckComplete = false;
+
+  // Dynamic sizing variables
+  late AnimationController _sizeAnimationController;
+  late Animation<double> _sizeAnimation;
+  bool _isKeyboardVisible = false;
+  double _currentNavHeight = 70.0;
+
+  // Dynamic size configurations with safer bounds
+  static const double _minNavHeight = 65.0; // Increased minimum
+  static const double _maxNavHeight = 75.0; // Reduced maximum
+  static const double _compactNavHeight = 60.0; // Slightly increased compact
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _connectivityManager = ConnectivityManager();
+
+    // Initialize size animation controller
+    _sizeAnimationController = AnimationController(
+      duration: Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _sizeAnimation = Tween<double>(
+      begin: _currentNavHeight,
+      end: _currentNavHeight,
+    ).animate(CurvedAnimation(
+      parent: _sizeAnimationController,
+      curve: Curves.easeInOut,
+    ));
+
     _initializeConnectivity();
+    _setupDynamicSizing();
+  }
+
+  void _setupDynamicSizing() {
+    // Listen to media query changes for keyboard visibility
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkScreenSize();
+    });
+  }
+
+  void _checkScreenSize() {
+    final mediaQuery = MediaQuery.of(context);
+    final screenHeight = mediaQuery.size.height;
+    final viewInsets = mediaQuery.viewInsets;
+    final bottomPadding = mediaQuery.viewPadding.bottom;
+
+    // Check if keyboard is visible
+    final keyboardVisible = viewInsets.bottom > 0;
+
+    // Calculate dynamic height based on screen size and keyboard visibility
+    // Add safe area padding consideration
+    double newHeight;
+    if (keyboardVisible) {
+      newHeight = _compactNavHeight; // Compact when keyboard is visible
+    } else if (screenHeight > 800) {
+      newHeight = _maxNavHeight + (bottomPadding > 0 ? bottomPadding * 0.3 : 0); // Large screens
+    } else if (screenHeight < 600) {
+      newHeight = _minNavHeight + (bottomPadding > 0 ? bottomPadding * 0.2 : 0); // Small screens
+    } else {
+      newHeight = 70.0 + (bottomPadding > 0 ? bottomPadding * 0.2 : 0); // Default for medium screens
+    }
+
+    // Ensure height doesn't exceed reasonable bounds
+    newHeight = newHeight.clamp(55.0, 85.0);
+
+    // Update animation if height changed
+    if ((newHeight - _currentNavHeight).abs() > 1.0) { // Only animate significant changes
+      _animateToHeight(newHeight);
+    }
+
+    // Update keyboard visibility state
+    if (_isKeyboardVisible != keyboardVisible) {
+      setState(() {
+        _isKeyboardVisible = keyboardVisible;
+      });
+    }
+  }
+
+  void _animateToHeight(double newHeight) {
+    _sizeAnimation = Tween<double>(
+      begin: _currentNavHeight,
+      end: newHeight,
+    ).animate(CurvedAnimation(
+      parent: _sizeAnimationController,
+      curve: Curves.easeInOut,
+    ));
+
+    _currentNavHeight = newHeight;
+    _sizeAnimationController.forward(from: 0);
   }
 
   @override
@@ -78,10 +162,23 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // App came back to foreground, check immediately
       _connectivityManager.forceCheckConnection();
       _startRealTimeChecking();
+      // Recheck screen size
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _checkScreenSize();
+      });
     } else if (state == AppLifecycleState.paused) {
       // App went to background, reduce frequency
       _stopRealTimeChecking();
     }
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    // Called when screen metrics change (keyboard, orientation, etc.)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkScreenSize();
+    });
   }
 
   Future<void> _initializeConnectivity() async {
@@ -92,7 +189,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           setState(() {
             _connectionStatus = status;
             if (!_initialCheckComplete) {
-              _initialCheckComplete = true; // Mark initial check as complete
+              _initialCheckComplete = true;
             }
           });
 
@@ -151,6 +248,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     _connectionSubscription?.cancel();
     _connectivityManager.dispose();
     _stopRealTimeChecking();
+    _sizeAnimationController.dispose();
     super.dispose();
   }
 
@@ -163,6 +261,11 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
+    });
+
+    // Animate nav bar on tap for feedback
+    _sizeAnimationController.forward(from: 0).then((_) {
+      _sizeAnimationController.reverse();
     });
   }
 
@@ -191,50 +294,182 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // Get media query data for safe area calculations
+    final mediaQuery = MediaQuery.of(context);
+    final bottomPadding = mediaQuery.viewPadding.bottom;
+
     final List<Widget> _pages = <Widget>[
       Dashboard(onTabChange: (int idx) => setState(() => _selectedIndex = idx)),
       StockScreen(goToDashboard: _goToDashboard),
       TransactionScreen(goToDashboard: _goToDashboard),
     ];
 
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        body: Stack(
-          children: [
-            _pages[_selectedIndex],
-            // Only show overlay after initial check is complete and there's actually no connection
-            if (_initialCheckComplete && _connectionStatus != ConnectionStatus.connected)
-              Positioned.fill(
-                child: ConnectionStatusWidget(
-                  status: _connectionStatus,
-                  onRetry: _isRetrying ? null : _onRetryPressed,
-                  isRetrying: _isRetrying,
+    return Scaffold(
+      body: Stack(
+        children: [
+          // Add bottom padding to prevent content from being hidden behind nav bar
+          Padding(
+            padding: EdgeInsets.only(
+              bottom: _connectionStatus == ConnectionStatus.connected
+                  ? _currentNavHeight + bottomPadding
+                  : 0,
+            ),
+            child: _pages[_selectedIndex],
+          ),
+          // Only show overlay after initial check is complete and there's actually no connection
+          if (_initialCheckComplete && _connectionStatus != ConnectionStatus.connected)
+            Positioned.fill(
+              child: ConnectionStatusWidget(
+                status: _connectionStatus,
+                onRetry: _isRetrying ? null : _onRetryPressed,
+                isRetrying: _isRetrying,
+              ),
+            ),
+        ],
+      ),
+      bottomNavigationBar: _connectionStatus == ConnectionStatus.connected
+          ? AnimatedBuilder(
+        animation: _sizeAnimation,
+        builder: (context, child) {
+          return SafeArea(
+            child: Container(
+              height: _sizeAnimation.value,
+              margin: EdgeInsets.symmetric(
+                horizontal: 8.0,
+                vertical: 4.0,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(_isKeyboardVisible ? 15 : 25),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    spreadRadius: 0,
+                    blurRadius: 10,
+                    offset: Offset(0, -5),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(_isKeyboardVisible ? 15 : 25),
+                child: DynamicBottomNavigationBar(
+                  selectedIndex: _selectedIndex,
+                  onItemTapped: _onItemTapped,
+                  height: _sizeAnimation.value,
+                  isCompact: _isKeyboardVisible || _sizeAnimation.value < 65,
                 ),
               ),
-          ],
+            ),
+          );
+        },
+      )
+          : null,
+    );
+  }
+}
+
+// Dynamic Bottom Navigation Bar Widget
+class DynamicBottomNavigationBar extends StatelessWidget {
+  final int selectedIndex;
+  final Function(int) onItemTapped;
+  final double height;
+  final bool isCompact;
+
+  const DynamicBottomNavigationBar({
+    Key? key,
+    required this.selectedIndex,
+    required this.onItemTapped,
+    required this.height,
+    this.isCompact = false,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    // Adjust icon and text sizes based on height with better scaling
+    final double iconSize = isCompact ? 20 : (height > 70 ? 24 : 22);
+    final double fontSize = isCompact ? 10 : (height > 70 ? 12 : 11);
+    final double padding = isCompact ? 4 : (height > 70 ? 8 : 6);
+
+    return Container(
+      height: height,
+      child: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        items: <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: _buildDynamicIcon(
+              index: 0,
+              selectedIcon: Icons.dashboard,
+              unselectedIcon: Icons.dashboard_outlined,
+              iconSize: iconSize,
+              padding: padding,
+            ),
+            label: 'Dashboard',
+          ),
+          BottomNavigationBarItem(
+            icon: _buildDynamicIcon(
+              index: 1,
+              selectedIcon: Icons.inventory_2,
+              unselectedIcon: Icons.inventory_2_outlined,
+              iconSize: iconSize,
+              padding: padding,
+            ),
+            label: 'Stocks',
+          ),
+          BottomNavigationBarItem(
+            icon: _buildDynamicIcon(
+              index: 2,
+              selectedIcon: Icons.swap_horiz,
+              unselectedIcon: Icons.swap_horiz_outlined,
+              iconSize: iconSize,
+              padding: padding,
+            ),
+            label: 'Transactions',
+          ),
+        ],
+        currentIndex: selectedIndex,
+        selectedItemColor: Colors.indigo,
+        unselectedItemColor: Colors.grey[600],
+        selectedLabelStyle: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: fontSize,
+          height: 1.2, // Improved line height
         ),
-        bottomNavigationBar: _connectionStatus == ConnectionStatus.connected
-            ? BottomNavigationBar(
-          items: const <BottomNavigationBarItem>[
-            BottomNavigationBarItem(
-              icon: Icon(Icons.dashboard),
-              label: 'Dashboard',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.inventory),
-              label: 'Stocks',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.swap_horiz),
-              label: 'Transactions',
-            ),
-          ],
-          currentIndex: _selectedIndex,
-          selectedItemColor: Colors.indigo,
-          onTap: _onItemTapped,
-        )
-            : null,
+        unselectedLabelStyle: TextStyle(
+          fontWeight: FontWeight.w400,
+          fontSize: fontSize - 1,
+          height: 1.2, // Improved line height
+        ),
+        onTap: onItemTapped,
+        // Hide labels when too compact
+        showSelectedLabels: !isCompact,
+        showUnselectedLabels: !isCompact,
+      ),
+    );
+  }
+
+  Widget _buildDynamicIcon({
+    required int index,
+    required IconData selectedIcon,
+    required IconData unselectedIcon,
+    required double iconSize,
+    required double padding,
+  }) {
+    final bool isSelected = selectedIndex == index;
+
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 200),
+      padding: EdgeInsets.all(padding),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? Colors.indigo.withOpacity(0.1)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(isCompact ? 8 : 12),
+      ),
+      child: Icon(
+        isSelected ? selectedIcon : unselectedIcon,
+        size: iconSize,
       ),
     );
   }
@@ -613,7 +848,6 @@ class ConnectionStatusWidget extends StatelessWidget {
     if (status == ConnectionStatus.connected) {
       return SizedBox.shrink();
     }
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -737,7 +971,6 @@ class ConnectionStatusWidget extends StatelessWidget {
         return 'Connection Issue';
     }
   }
-
   String _getDescription() {
     switch (status) {
       case ConnectionStatus.noConnectivity:

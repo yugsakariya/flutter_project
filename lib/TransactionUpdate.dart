@@ -20,7 +20,7 @@ class _TransactionupdateState extends State<Transactionupdate> {
   final _formKey = GlobalKey<FormState>();
   String? _type;
   String? _status;
-
+  String? lable = "";
   // Store original transaction data for stock reversal
   String? _originalProduct;
   int? _originalQuantity;
@@ -261,15 +261,37 @@ class _TransactionupdateState extends State<Transactionupdate> {
                   return null;
                 },
               ),
+              DropdownButtonFormField<String>(
+                value: _type,
+                items: ['Purchase', 'Sale'].map((type) {
+                  return DropdownMenuItem<String>(
+                    value: type,
+                    child: Text(type),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() => _type = value);
+                },
+                decoration: InputDecoration(
+                  labelText: "Type",
+                  hintText: "Select Type",
+                ),
+                validator: (value) {
+                  if (value == null) {
+                    return "Please select type";
+                  }
+                  return null;
+                },
+              ),
               TextFormField(
                 controller: _partyController,
                 decoration: InputDecoration(
-                  label: Text("Supplier"),
-                  hintText: "Enter Supplier Name",
+                  label: Text(lable!),
+                  hintText: "Enter $lable Name",
                 ),
                 validator: (value) {
                   if (value!.isEmpty) {
-                    return "Please enter Supplier name";
+                    return "Please enter $lable name";
                   }
                   return null;
                 },
@@ -303,28 +325,7 @@ class _TransactionupdateState extends State<Transactionupdate> {
                   return null;
                 },
               ),
-              DropdownButtonFormField<String>(
-                value: _type,
-                items: ['Purchase', 'Sale'].map((type) {
-                  return DropdownMenuItem<String>(
-                    value: type,
-                    child: Text(type),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() => _type = value);
-                },
-                decoration: InputDecoration(
-                  labelText: "Type",
-                  hintText: "Select Type",
-                ),
-                validator: (value) {
-                  if (value == null) {
-                    return "Please select type";
-                  }
-                  return null;
-                },
-              ),
+
               DropdownButtonFormField<String>(
                 value: _status,
                 items: ['Paid', 'Due'].map((status) {

@@ -2,10 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_project/TransactionAdd.dart';
 import 'package:flutter_project/TransactionUpdate.dart';
-import 'package:flutter_project/Dashboard.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
-// import 'TransactionAdd.dart';
 
 
 class TransactionScreen extends StatefulWidget {
@@ -30,7 +28,6 @@ class _TransactionScreenState extends State<TransactionScreen> {
   final _dateController = TextEditingController();
   final _partyController = TextEditingController();
   final _statusController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
 
   void _updateTransaction(String docId){
     showDialog(context: context, builder: (context) {
@@ -167,80 +164,6 @@ class _TransactionScreenState extends State<TransactionScreen> {
     );
   }
 
-  // void _openFilterSheet() {
-  //   showModalBottomSheet(
-  //     context: context,
-  //     shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-  //     builder: (context) {
-  //       return Padding(
-  //         padding: const EdgeInsets.all(16),
-  //         child: SingleChildScrollView(
-  //           child: Column(
-  //             mainAxisSize: MainAxisSize.min,
-  //             children: [
-  //               Text("Filter Transactions", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-  //               SizedBox(height: 16),
-  //               DropdownButtonFormField<String>(
-  //                 value: selectedType,
-  //                 items: ['All', 'Purchase', 'Sale']
-  //                     .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-  //                     .toList(),
-  //                 onChanged: (value) => setState(() => selectedType = value!),
-  //                 decoration: InputDecoration(labelText: 'Type'),
-  //               ),
-  //               SizedBox(height: 10),
-  //               DropdownButtonFormField<String>(
-  //                 value: selectedStatus,
-  //                 items: ['All', 'Paid', 'Due']
-  //                     .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-  //                     .toList(),
-  //                 onChanged: (value) => setState(() => selectedStatus = value!),
-  //                 decoration: InputDecoration(labelText: 'Status'),
-  //               ),
-  //               SizedBox(height: 10),
-  //               Row(
-  //                 children: [
-  //                   Expanded(
-  //                     child: InkWell(
-  //                       onTap: () => _pickDate(isFrom: true),
-  //                       child: InputDecorator(
-  //                         decoration: InputDecoration(labelText: 'From Date'),
-  //                         child: Text(fromDate == null
-  //                             ? 'Select'
-  //                             : DateFormat('yyyy-MM-dd').format(fromDate!)),
-  //                       ),
-  //                     ),
-  //                   ),
-  //                   SizedBox(width: 10),
-  //                   Expanded(
-  //                     child: InkWell(
-  //                       onTap: () => _pickDate(isFrom: false),
-  //                       child: InputDecorator(
-  //                         decoration: InputDecoration(labelText: 'To Date'),
-  //                         child: Text(toDate == null
-  //                             ? 'Select'
-  //                             : DateFormat('yyyy-MM-dd').format(toDate!)),
-  //                       ),
-  //                     ),
-  //                   ),
-  //                 ],
-  //               ),
-  //               SizedBox(height: 20),
-  //               ElevatedButton(
-  //                 onPressed: () {
-  //                   Navigator.pop(context);
-  //                   _applyFilters();
-  //                 },
-  //                 child: Text("Apply Filter"),
-  //               ),
-  //             ],
-  //           ),
-  //         ),
-  //       );
-  //     },
-  //   );
-  // }
-
   final _searchController = TextEditingController();
   String _searchQuery='';
   Stream<QuerySnapshot> _getTransactionStream(){
@@ -250,8 +173,8 @@ class _TransactionScreenState extends State<TransactionScreen> {
     else{
       return FirebaseFirestore.instance
           .collection('transactions')
-          .where('product',isGreaterThanOrEqualTo: _searchQuery)
-          .where('product', isLessThanOrEqualTo: '$_searchQuery\uf8ff')
+          .where('product',isGreaterThanOrEqualTo: _searchQuery.toLowerCase())
+          .where('product', isLessThanOrEqualTo: '$_searchQuery\uf8ff'.toLowerCase())
           .snapshots();
     }
   }
@@ -410,7 +333,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
                                     Row(children: [
                                       Icon(Icons.local_offer, size: 18),
                                       SizedBox(width: 5),
-                                      Text("Supplier: ${doc['party']}")
+                                      Text("${_checktype(doc['type'])}: ${doc['party']}")
                                     ]),
                                     SizedBox(height: 6),
                                     Container(
@@ -463,7 +386,15 @@ class _TransactionScreenState extends State<TransactionScreen> {
       ),
     );
   }
-
+ String? _checktype(String type){
+    if (type == "Purchase"){
+      return "Supplier";
+    }
+    else if (type == "Sale"){
+      return "Customer";
+    }
+    return null;
+ }
   String _capitalizeFirstLetter(String text) {
     if (text.isEmpty) return text;
     return text[0].toUpperCase() + text.substring(1).toLowerCase();

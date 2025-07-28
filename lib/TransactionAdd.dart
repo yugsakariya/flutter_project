@@ -149,7 +149,7 @@ class _TransactionaddState extends State<Transactionadd> {
     _partyController.dispose();
     super.dispose();
   }
-
+ String? lable = '';
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -289,19 +289,7 @@ class _TransactionaddState extends State<Transactionadd> {
                   return null;
                 },
               ),
-              TextFormField(
-                controller: _partyController,
-                decoration: InputDecoration(
-                  label: Text("Supplier"),
-                  hintText: "Enter Supplier Name",
-                ),
-                validator: (value) {
-                  if (value!.isEmpty) {
-                    return "Please enter Supplier name";
-                  }
-                  return null;
-                },
-              ),
+
               TextFormField(
                 controller: _dateController,
                 decoration: InputDecoration(
@@ -340,7 +328,15 @@ class _TransactionaddState extends State<Transactionadd> {
                   );
                 }).toList(),
                 onChanged: (value) {
-                  setState(() => _selectedType = value);
+                  setState((){
+                    _selectedType = value;
+                    if(value=="Purchase"){
+                      lable = "Supplier";
+                    }
+                    if(value == 'Sale'){
+                      lable = "Customer" ;
+                    }
+                  });
                 },
                 decoration: InputDecoration(
                   labelText: "Type",
@@ -349,6 +345,19 @@ class _TransactionaddState extends State<Transactionadd> {
                 validator: (value) {
                   if (value == null) {
                     return "Please select type";
+                  }
+                  return null;
+                },
+              ),
+              TextFormField(
+                controller: _partyController,
+                decoration: InputDecoration(
+                  label: Text(lable!),
+                  hintText: "Enter $lable Name",
+                ),
+                validator: (value) {
+                  if (value!.isEmpty) {
+                    return "Please enter $lable name";
                   }
                   return null;
                 },
