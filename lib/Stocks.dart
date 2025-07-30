@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 class StockScreen extends StatefulWidget {
@@ -10,6 +11,8 @@ class StockScreen extends StatefulWidget {
 }
 
 class _StockScreenState extends State<StockScreen> {
+  final User? user = FirebaseAuth.instance.currentUser!;
+
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -28,7 +31,7 @@ class _StockScreenState extends State<StockScreen> {
           foregroundColor: Colors.white,
         ),
         body: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection("stocks").snapshots(),
+            stream: FirebaseFirestore.instance.collection("stocks").where('user',isEqualTo:user!.uid).snapshots(),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return Center(

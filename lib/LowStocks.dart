@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 class LowStocks extends StatefulWidget {
@@ -10,7 +11,7 @@ class LowStocks extends StatefulWidget {
 
 class _LowStocksState extends State<LowStocks> {
   final int _lowStockThreshold = 10; // Define threshold for low stock
-
+  final user = FirebaseAuth.instance.currentUser;
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -26,7 +27,7 @@ class _LowStocksState extends State<LowStocks> {
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
-            .collection("stocks")
+            .collection("stocks").where("user",isEqualTo: user?.uid)
             .where('quantity', isLessThanOrEqualTo: _lowStockThreshold)
             .snapshots(),
         builder: (context, snapshot) {

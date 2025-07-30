@@ -19,7 +19,7 @@ class Dashboard extends StatefulWidget {
 }
 
 class _DashboardState extends State<Dashboard> {
-
+  final user = FirebaseAuth.instance.currentUser!;
   Future<bool> _showExitDialog() async {
     return await showDialog<bool>(
       context: context,
@@ -94,7 +94,7 @@ class _DashboardState extends State<Dashboard> {
                 }
               },
               itemBuilder: (BuildContext context) {
-                final user = FirebaseAuth.instance.currentUser;
+                // final user = FirebaseAuth.instance.currentUser;
                 return [
                   PopupMenuItem<String>(
                     enabled: false,
@@ -183,6 +183,7 @@ class _DashboardState extends State<Dashboard> {
                 stream: FirebaseFirestore.instance
                     .collection("transactions")
                     .orderBy("timestamp", descending: true)
+                    .where("user",isEqualTo: user.uid)
                     .limit(3)
                     .snapshots(),
                 builder: (context, snapshot) {
@@ -257,6 +258,7 @@ class _DashboardState extends State<Dashboard> {
         stream: FirebaseFirestore.instance
             .collection("stocks")
             .where('quantity', isLessThanOrEqualTo: 10)
+            .where("user",isEqualTo: user.uid)
             .snapshots(),
         initialData: null,
         builder: (context, snapshot) {
@@ -302,7 +304,7 @@ class _DashboardState extends State<Dashboard> {
     return Expanded(
       child: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
-            .collection("stocks")
+            .collection("stocks").where("user", isEqualTo: user.uid)
             .snapshots(),
         initialData: null,
         builder: (context, snapshot) {

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_project/TransactionAdd.dart';
 import 'package:flutter_project/TransactionUpdate.dart';
@@ -14,6 +15,7 @@ class TransactionScreen extends StatefulWidget {
   State<TransactionScreen> createState() => _TransactionScreenState();
 }
 class _TransactionScreenState extends State<TransactionScreen> {
+  final User? user = FirebaseAuth.instance.currentUser;
   @override
   void initState() {
     super.initState();
@@ -63,6 +65,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
       // Query the stocks collection to find the document with matching product name
       QuerySnapshot stockQuery = await FirebaseFirestore.instance
           .collection('stocks')
+          .where('user', isEqualTo: user!.uid)
           .where('product', isEqualTo: product) // Assuming the field name is 'product'
           .limit(1)
           .get();
@@ -168,11 +171,11 @@ class _TransactionScreenState extends State<TransactionScreen> {
   String _searchQuery='';
   Stream<QuerySnapshot> _getTransactionStream(){
     if(_searchQuery.isEmpty){
-      return FirebaseFirestore.instance.collection('transactions').snapshots();
+      return FirebaseFirestore.instance.collection('transactions').where('user',isEqualTo: user!.uid).snapshots();
     }
     else{
       return FirebaseFirestore.instance
-          .collection('transactions')
+          .collection('transactions').where('user',isEqualTo: user!.uid)
           .where('product',isGreaterThanOrEqualTo: _searchQuery.toLowerCase())
           .where('product', isLessThanOrEqualTo: '$_searchQuery\uf8ff'.toLowerCase())
           .snapshots();
