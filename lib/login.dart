@@ -38,7 +38,7 @@ class _FormDesignState extends State<Loginscreen> {
                     ),
                     width: 200,
                     height: 200,
-                    child: Image.asset("assets/logo.jpg"),
+                    child: Image.asset("assets/logo.png"),
                   ),
                   const SizedBox(height: 10),
                   SizedBox(height: 20),

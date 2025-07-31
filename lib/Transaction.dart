@@ -6,7 +6,6 @@ import 'package:flutter_project/TransactionUpdate.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
 
-
 class TransactionScreen extends StatefulWidget {
   final VoidCallback? goToDashboard;
   const TransactionScreen({super.key, this.goToDashboard});
@@ -14,184 +13,259 @@ class TransactionScreen extends StatefulWidget {
   @override
   State<TransactionScreen> createState() => _TransactionScreenState();
 }
+
 class _TransactionScreenState extends State<TransactionScreen> {
   final User? user = FirebaseAuth.instance.currentUser;
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
   @override
-  void initState() {
-    super.initState();
-    _typeController.text = 'Purchase'; // Default value
-    _statusController.text = 'Paid'; // Default value
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
-  final _productController = TextEditingController();
-  final _typeController = TextEditingController();
-  final _quantityController = TextEditingController();
-  final _unitPriceController = TextEditingController();
-  // final _totalController = TextEditingController();
-  final _dateController = TextEditingController();
-  final _partyController = TextEditingController();
-  final _statusController = TextEditingController();
 
-  void _updateTransaction(String docId){
-    showDialog(context: context, builder: (context) {
-      return Transactionupdate(docRef: docId);
-    });
-  }
-  void _deleteTransaction(String docId) async {
-    try {
-      // First, get the transaction document to access its data
-      DocumentSnapshot transactionDoc = await FirebaseFirestore.instance
-          .collection('transactions')
-          .doc(docId)
-          .get();
+  // Get transaction stream with optional search
+  Stream<QuerySnapshot> _getTransactionStream() {
+    var query = FirebaseFirestore.instance
+        .collection('transactions')
+        .where('user', isEqualTo: user!.uid);
 
-      if (!transactionDoc.exists) {
-        Fluttertoast.showToast(
-            msg: "Transaction not found",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            backgroundColor: Colors.red,
-            textColor: Colors.white,
-            fontSize: 16.0
-        );
-        return;
-      }
-
-      // Get transaction data
-      final transactionData = transactionDoc.data() as Map<String, dynamic>;
-      final String product = transactionData['product'];
-      final String type = transactionData['type'];
-      final int quantity = transactionData['quantity'];
-
-      // Query the stocks collection to find the document with matching product name
-      QuerySnapshot stockQuery = await FirebaseFirestore.instance
-          .collection('stocks')
-          .where('user', isEqualTo: user!.uid)
-          .where('product', isEqualTo: product) // Assuming the field name is 'product'
-          .limit(1)
-          .get();
-
-      if (stockQuery.docs.isEmpty) {
-        Fluttertoast.showToast(
-            msg: "Stock record not found for product: $product",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            backgroundColor: Colors.orange,
-            textColor: Colors.white,
-            fontSize: 16.0
-        );
-        // Still delete the transaction even if stock is not found
-        await FirebaseFirestore.instance.collection('transactions').doc(docId).delete();
-        Navigator.of(context, rootNavigator: true).pop();
-        return;
-      }
-
-      // Get the stock document reference
-      DocumentSnapshot stockDoc = stockQuery.docs.first;
-      String stockDocId = stockDoc.id;
-
-      // Use a batch to ensure both operations succeed or fail together
-      WriteBatch batch = FirebaseFirestore.instance.batch();
-
-      // Delete the transaction
-      batch.delete(FirebaseFirestore.instance.collection('transactions').doc(docId));
-
-      // Update stock based on transaction type
-      DocumentReference stockRef = FirebaseFirestore.instance
-          .collection('stocks')
-          .doc(stockDocId);
-
-      if (type == 'Purchase') {
-        // If it was a purchase, we need to subtract the quantity from stock
-        // (reversing the original addition)
-        batch.update(stockRef, {
-          'quantity': FieldValue.increment(-quantity),
-        });
-      } else if (type == 'Sale') {
-        // If it was a sale, we need to add the quantity back to stock
-        // (reversing the original subtraction)
-        batch.update(stockRef, {
-          'quantity': FieldValue.increment(quantity),
-        });
-      }
-
-      // Execute the batch
-      await batch.commit();
-
-      // Check if there are any remaining transactions for this product
-      QuerySnapshot remainingTransactions = await FirebaseFirestore.instance
-          .collection('transactions')
-          .where('product', isEqualTo: product)
-          .get();
-
-      if (remainingTransactions.docs.isEmpty) {
-        // No transactions left for this product, delete the stock document
-        await FirebaseFirestore.instance.collection('stocks').doc(stockDocId).delete();
-      }
-
-      Navigator.of(context, rootNavigator: true).pop();
-
-      Fluttertoast.showToast(
-          msg: "Transaction deleted and stock updated successfully",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-          backgroundColor: Colors.green,
-          textColor: Colors.white,
-          fontSize: 16.0
-      );
-
-    } catch (error) {
-      Fluttertoast.showToast(
-          msg: "Failed to delete transaction: $error",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-          backgroundColor: Colors.red,
-          textColor: Colors.white,
-          fontSize: 16.0
-      );
+    if (_searchQuery.isNotEmpty) {
+      query = query
+          .where('product', isGreaterThanOrEqualTo: _searchQuery.toLowerCase())
+          .where('product', isLessThanOrEqualTo: '${_searchQuery}\uf8ff'.toLowerCase());
     }
+
+    return query.snapshots();
   }
+
+  // Show update dialog
+  void _updateTransaction(String docId) {
+    showDialog(
+      context: context,
+      builder: (context) => Transactionupdate(docRef: docId),
+    );
+  }
+
+  // Show delete confirmation dialog
   void _showDeleteDialog(String docId) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text("Delete Transaction"),
-        content: Text("Are you sure you want to delete this transaction?"),
+        title: const Text("Delete Transaction"),
+        content: const Text("Are you sure you want to delete this transaction?"),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text("Cancel")),
-          TextButton(onPressed:() {
-            _deleteTransaction(docId);
-          },
-              child: Text("Delete", style: TextStyle(color: Colors.red))),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () => _deleteTransaction(docId),
+            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+          ),
         ],
       ),
     );
   }
 
-  final _searchController = TextEditingController();
-  String _searchQuery='';
-  Stream<QuerySnapshot> _getTransactionStream(){
-    if(_searchQuery.isEmpty){
-      return FirebaseFirestore.instance.collection('transactions').where('user',isEqualTo: user!.uid).snapshots();
-    }
-    else{
-      return FirebaseFirestore.instance
-          .collection('transactions').where('user',isEqualTo: user!.uid)
-          .where('product',isGreaterThanOrEqualTo: _searchQuery.toLowerCase())
-          .where('product', isLessThanOrEqualTo: '$_searchQuery\uf8ff'.toLowerCase())
-          .snapshots();
+  // Delete transaction and update stock
+  Future<void> _deleteTransaction(String docId) async {
+    try {
+      // Get transaction document
+      final transactionDoc = await FirebaseFirestore.instance
+          .collection('transactions')
+          .doc(docId)
+          .get();
+
+      if (!transactionDoc.exists) {
+        _showToast("Transaction not found", Colors.red);
+        return;
+      }
+
+      final data = transactionDoc.data() as Map<String, dynamic>;
+      final product = data['product'] as String;
+      final type = data['type'] as String;
+      final quantity = data['quantity'] as int;
+
+      // Find corresponding stock document
+      final stockQuery = await FirebaseFirestore.instance
+          .collection('stocks')
+          .where('user', isEqualTo: user!.uid)
+          .where('product', isEqualTo: product)
+          .limit(1)
+          .get();
+
+      // Use batch for atomic operations
+      final batch = FirebaseFirestore.instance.batch();
+      batch.delete(FirebaseFirestore.instance.collection('transactions').doc(docId));
+
+      if (stockQuery.docs.isNotEmpty) {
+        final stockRef = FirebaseFirestore.instance
+            .collection('stocks')
+            .doc(stockQuery.docs.first.id);
+
+        // Reverse the stock change
+        final quantityChange = type == 'Purchase' ? -quantity : quantity;
+        batch.update(stockRef, {'quantity': FieldValue.increment(quantityChange)});
+
+        // Check if we should delete the stock document
+        final remainingTransactions = await FirebaseFirestore.instance
+            .collection('transactions')
+            .where('product', isEqualTo: product)
+            .get();
+
+        if (remainingTransactions.docs.length == 1) { // Only current transaction
+          batch.delete(stockRef);
+        }
+      }
+
+      await batch.commit();
+      Navigator.of(context, rootNavigator: true).pop();
+      _showToast("Transaction deleted successfully", Colors.green);
+
+    } catch (error) {
+      _showToast("Failed to delete transaction: $error", Colors.red);
     }
   }
-  @override
-  void dispose(){
-    _productController.dispose();
-    _typeController.dispose();
-    _quantityController.dispose();
-    _unitPriceController.dispose();
-    _dateController.dispose();
-    _partyController.dispose();
-    _statusController.dispose();
-    super.dispose();
+
+  // Show toast message
+  void _showToast(String message, Color backgroundColor) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+      backgroundColor: backgroundColor,
+      textColor: Colors.white,
+      fontSize: 16.0,
+    );
   }
+
+  // Build transaction card
+  Widget _buildTransactionCard(DocumentSnapshot doc) {
+    final isPurchase = doc['type'] == 'Purchase';
+    final isPaid = doc['status'] == 'Paid';
+
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      isPurchase ? Icons.trending_up : Icons.trending_down,
+                      color: isPurchase ? Colors.green : Colors.red,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _capitalizeFirstLetter(doc['product']),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isPurchase ? Colors.purple.shade100 : Colors.orange.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    doc['type'],
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isPurchase ? Colors.purple : Colors.orange,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            // Transaction details
+            _buildDetailRow(Icons.format_list_numbered, "Qty: ${doc['quantity']}"),
+            _buildDetailRow(Icons.attach_money, "Unit Price: ₹${doc['unitPrice']}"),
+            _buildDetailRow(Icons.calendar_today,
+                "Date: ${_formatDate(doc['date'].toDate())}"),
+            _buildDetailRow(Icons.local_offer,
+                "${isPurchase ? 'Supplier' : 'Customer'}: ${doc['party']}"),
+
+            const SizedBox(height: 6),
+
+            // Status and actions row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isPaid ? Colors.green.shade100 : Colors.orange.shade100,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    doc['status'],
+                    style: TextStyle(
+                      color: isPaid ? Colors.green : Colors.orange,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => _updateTransaction(doc.id),
+                      icon: const Icon(Icons.edit),
+                      tooltip: "Update Transaction",
+                    ),
+                    IconButton(
+                      onPressed: () => _showDeleteDialog(doc.id),
+                      icon: const Icon(Icons.delete),
+                      tooltip: "Delete Transaction",
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Build detail row helper
+  Widget _buildDetailRow(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 18),
+          const SizedBox(width: 5),
+          Text(text),
+        ],
+      ),
+    );
+  }
+
+  // Format date helper
+  String _formatDate(DateTime date) {
+    return "${date.day} ${DateFormat('MMM').format(date)} ${date.year}";
+  }
+
+  // Capitalize first letter helper
+  String _capitalizeFirstLetter(String text) {
+    if (text.isEmpty) return text;
+    return text[0].toUpperCase() + text.substring(1).toLowerCase();
+  }
+
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -203,203 +277,77 @@ class _TransactionScreenState extends State<TransactionScreen> {
         return true;
       },
       child: Scaffold(
-        backgroundColor: Color(0xFFF6F6F6),
+        backgroundColor: const Color(0xFFF6F6F6),
         appBar: AppBar(
-          title: Text("Transactions"),
+          title: const Text("Transactions"),
           backgroundColor: Colors.indigo,
           foregroundColor: Colors.white,
-          // Remove custom leading button
         ),
         floatingActionButton: FloatingActionButton(
-            backgroundColor: Colors.indigo,
-            child: const Icon(Icons.add, color: Colors.white),
-            onPressed: () {
-              showDialog(context: context, builder: (context) {
-                return Transactionadd();
-              });
-            }
+          backgroundColor: Colors.indigo,
+          onPressed: () {
+            showDialog(
+              context: context,
+              builder: (context) => Transactionadd(),
+            );
+          },
+          child: const Icon(Icons.add, color: Colors.white),
         ),
-        body:  Padding(
+        body: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
+              const SizedBox(height: 16),
 
-              SizedBox(height: 16),
+              // Search field
               TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  prefixIcon: Icon(Icons.search),
+                  prefixIcon: const Icon(Icons.search),
                   hintText: 'Search transactions...',
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   filled: true,
                   fillColor: Colors.white,
                 ),
-                onChanged: (value){
+                onChanged: (value) {
                   setState(() {
                     _searchQuery = value;
                   });
-                  print(_searchQuery);
                 },
               ),
-              SizedBox(height: 16),
+
+              const SizedBox(height: 16),
+
+              // Transaction list
               Expanded(
-                  child: StreamBuilder<QuerySnapshot>(stream: _getTransactionStream(),
-                    builder: (context,snapshot){
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return Center(child: CircularProgressIndicator());
-                      }
-                      else if (snapshot.hasError) {
-                        return Center(child: Text("Error: ${snapshot.error}"));
-                      }
-                      else if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                        return Center(child: Text("No transactions found"));
-                      }
-                      else{
-                        return ListView.builder(
-                          itemCount: snapshot.data!.docs.length,
-                          itemBuilder: (context, index) {
-                            final doc = snapshot.data!.docs[index];
-                            return Card(
-                              elevation: 1,
-                              margin: EdgeInsets.only(bottom: 14),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                              child: Padding(
-                                padding: const EdgeInsets.all(14),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment
-                                          .spaceBetween,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              doc['type'] == 'Purchase'
-                                                  ? Icons.trending_up
-                                                  : Icons.trending_down,
-                                              color: doc['type'] == 'Purchase'
-                                                  ? Colors
-                                                  .green
-                                                  : Colors.red,
-                                            ),
-                                            SizedBox(height: 12),
-                                            SizedBox(width: 6),
-                                            Text(_capitalizeFirstLetter(doc['product']),
-                                                style: TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 16)),
-                                          ],
-                                        ),
-                                        Container(
-                                          padding: EdgeInsets.symmetric(
-                                              horizontal: 10, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color:
-                                            doc['type'] == 'Purchase'
-                                                ? Colors.purple.shade100
-                                                : Colors.orange.shade100,
-                                            borderRadius: BorderRadius.circular(
-                                                12),
-                                          ),
-                                          child: Text(doc['type'],
-                                              style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: doc['type'] == 'Purchase'
-                                                      ? Colors.purple
-                                                      : Colors.orange)),
-                                        ),
-                                      ],
-                                    ),
-                                    SizedBox(height: 8),
-                                    Row(children: [
-                                      Icon(Icons.format_list_numbered, size: 18),
-                                      SizedBox(width: 5),
-                                      Text("Qty: ${doc['quantity']}")
-                                    ]),
-                                    Row(children: [
-                                      Icon(Icons.attach_money, size: 18),
-                                      SizedBox(width: 5),
-                                      Text("Unit Price: \₹${doc['unitPrice']}")
-                                    ]),
-                                    // Row(children: [
-                                    //   Icon(Icons.money, size: 18),
-                                    //   SizedBox(width: 5),
-                                    //   Text("Total: \₹${doc['total']}")
-                                    // ]),
-                                    Row(children: [
-                                      Icon(Icons.calendar_today, size: 18),
-                                      SizedBox(width: 5),
-                                      Text("Date: ${doc['date'].toDate().day} ${DateFormat('MMM').format(doc['date'].toDate())} ${doc['date'].toDate().year}")
-                                    ]),
-                                    Row(children: [
-                                      Icon(Icons.local_offer, size: 18),
-                                      SizedBox(width: 5),
-                                      Text("${_checktype(doc['type'])}: ${doc['party']}")
-                                    ]),
-                                    SizedBox(height: 6),
-                                    Container(
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: doc['status'] == 'Paid'
-                                            ? Colors.green.shade100
-                                            : Colors.orange.shade100,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Text(doc['status'],
-                                          style: TextStyle(
-                                              color: doc['status'] == 'Paid'
-                                                  ? Colors.green
-                                                  : Colors.orange,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 12)),
-                                    ),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        IconButton(onPressed: () {
-                                          _updateTransaction(doc.id);
-                                        },
-                                          icon: Icon(Icons.edit),
-                                          tooltip: "Update Transaction",
-                                        ),
-                                        IconButton(onPressed: () {
-                                          _showDeleteDialog(doc.id);
-                                        },
-                                          icon: Icon(Icons.delete),
-                                          tooltip: "Delete Transaction",
-                                        ),
-                                      ],
-                                    )
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      }
-                    },
-                  )
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: _getTransactionStream(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (snapshot.hasError) {
+                      return Center(child: Text("Error: ${snapshot.error}"));
+                    }
+
+                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                      return const Center(child: Text("No transactions found"));
+                    }
+
+                    return ListView.builder(
+                      itemCount: snapshot.data!.docs.length,
+                      itemBuilder: (context, index) {
+                        return _buildTransactionCard(snapshot.data!.docs[index]);
+                      },
+                    );
+                  },
+                ),
               ),
             ],
           ),
         ),
       ),
     );
-  }
- String? _checktype(String type){
-    if (type == "Purchase"){
-      return "Supplier";
-    }
-    else if (type == "Sale"){
-      return "Customer";
-    }
-    return null;
- }
-  String _capitalizeFirstLetter(String text) {
-    if (text.isEmpty) return text;
-    return text[0].toUpperCase() + text.substring(1).toLowerCase();
   }
 }

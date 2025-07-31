@@ -167,7 +167,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(20),
                         child: Image.asset(
-                          'assets/logo.jpg',
+                          'assets/logo.png',
                           fit: BoxFit.cover,
                         ),
                       ),
