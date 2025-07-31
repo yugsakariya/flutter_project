@@ -92,7 +92,11 @@ class _TransactionaddState extends State<Transactionadd> {
         'user': user!.uid,
         'timestamp': DateTime.now(),
       });
-
+      // if (_selectedType == "Purchase") {
+      // }
+      // else if (_selectedType == "Sale") {
+      //
+      // }
       await _updateStock(
         _productController.text.toLowerCase(),
         int.parse(_quantityController.text),
