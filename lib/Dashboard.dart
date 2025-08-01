@@ -5,6 +5,7 @@ import 'package:flutter_project/Profile.dart';
 import 'package:flutter_project/LowStocks.dart';
 import 'package:flutter_project/login.dart';
 import 'package:flutter_project/main.dart';
+import 'package:flutter_project/supplier.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -120,10 +121,7 @@ class _DashboardState extends State<Dashboard> {
               SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildSummaryCard("Total Category", "6", Colors.green, Icons.category),
-                  _buildSummaryCard("Suppliers", "10", Colors.orange, Icons.store),
-                ],
+                children: [_buildsuppliersCard(), _buildcustomerCard()],
               ),
               SizedBox(height: 30),
               Row(
@@ -137,12 +135,24 @@ class _DashboardState extends State<Dashboard> {
                 ],
               ),
               _buildRecentTransactions(),
-              SizedBox(height: 24),
-              _buildSectionTitle("Recent Billing"),
-              _buildRecentList([
-                {"title": "Invoice #4523", "amount": "₹1200", "date": "30 Jun 2025"},
-                {"title": "Invoice #4522", "amount": "₹800", "date": "29 Jun 2025"},
-              ]),
+              SizedBox(height: 30),
+              Row(
+                children: [
+                  _buildSectionTitle("Recent Billing"),
+                  Spacer(),
+                  TextButton(
+                    onPressed: () => widget.onTabChange?.call(3),
+                    child: Text("View More "),
+                  )
+                ],
+              ),
+
+              // SizedBox(height: 24),
+              // _buildSectionTitle("Recent Billing"),
+              // _buildRecentList([
+              //   {"title": "Invoice #4523", "amount": "₹1200", "date": "30 Jun 2025"},
+              //   {"title": "Invoice #4522", "amount": "₹800", "date": "29 Jun 2025"},
+              // ]),
             ],
           ),
         ),
@@ -179,28 +189,6 @@ class _DashboardState extends State<Dashboard> {
 
         return _buildRecentList(transactions);
       },
-    );
-  }
-
-  Widget _buildSummaryCard(String title, String count, Color color, IconData icon) {
-    return Expanded(
-      child: Card(
-        elevation: 3,
-        margin: EdgeInsets.all(8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 20, horizontal: 12),
-          child: Column(
-            children: [
-              Icon(icon, color: color, size: 30),
-              SizedBox(height: 10),
-              Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              SizedBox(height: 6),
-              Text(count, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -244,6 +232,88 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
+  Widget _buildsuppliersCard() {
+    return Expanded(
+      child: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection("stocks")
+            .where('quantity', isLessThanOrEqualTo: 10)
+            .where("user", isEqualTo: user.uid)
+            .snapshots(),
+        builder: (context, snapshot) {
+          final lowStockCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+
+          return GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SupplierScreen()),
+            ),
+            child: Card(
+              elevation: 3,
+              margin: EdgeInsets.all(8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+                child: Column(
+                  children: [
+                    Icon(Icons.local_shipping, color: Colors.orange, size: 30),
+                    SizedBox(height: 10),
+                    Text("Suppliers", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    SizedBox(height: 6),
+                    Text(lowStockCount.toString(),
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+
+  Widget _buildcustomerCard() {
+    return Expanded(
+      child: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection("stocks")
+            .where('quantity', isLessThanOrEqualTo: 10)
+            .where("user", isEqualTo: user.uid)
+            .snapshots(),
+        builder: (context, snapshot) {
+          final lowStockCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+
+          return GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SupplierScreen()),
+            ),
+            child: Card(
+              elevation: 3,
+              margin: EdgeInsets.all(8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+                child: Column(
+                  children: [
+                    Icon(Icons.account_circle, color: Colors.green, size: 30),
+                    SizedBox(height: 10),
+                    Text("Customer", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    SizedBox(height: 6),
+                    Text(lowStockCount.toString(),
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+
   Widget _buildStockCard() {
     return Expanded(
       child: StreamBuilder<QuerySnapshot>(
@@ -283,7 +353,6 @@ class _DashboardState extends State<Dashboard> {
       child: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
     );
   }
-
   Widget _buildRecentList(List<Map<String, dynamic>> items) {
     return Column(
       children: items.map((item) => Card(

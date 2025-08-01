@@ -19,14 +19,17 @@ class _TransactionaddState extends State<Transactionadd> {
   final _partyController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   final _productFocusNode = FocusNode();
+  final _partyFocusNode = FocusNode();
 
   String _selectedType = 'Purchase';
   String _selectedStatus = 'Paid';
-  bool _showSuggestions = false;
+  bool _showProductSuggestions = false;
+  bool _showPartySuggestions = false;
 
   final User? user = FirebaseAuth.instance.currentUser;
 
   String get _partyLabel => _selectedType == "Purchase" ? "Supplier" : "Customer";
+  String get _partyCollection => _selectedType == "Purchase" ? "suppliers" : "customers";
 
   Stream<List<String>> _getProductSuggestions(String query) {
     if (query.trim().isEmpty) return Stream.value([]);
@@ -40,7 +43,24 @@ class _TransactionaddState extends State<Transactionadd> {
         .map((snapshot) => snapshot.docs
         .map((doc) => doc['product'] as String? ?? '')
         .where((product) => product.isNotEmpty)
-        .toList());
+        .toSet() // Remove duplicates
+        .toList()..sort());
+  }
+
+  Stream<List<String>> _getPartySuggestions(String query) {
+    if (query.trim().isEmpty) return Stream.value([]);
+
+    return FirebaseFirestore.instance
+        .collection(_partyCollection)
+        .where('user', isEqualTo: user?.uid)
+        .where('name', isGreaterThanOrEqualTo: query.trim())
+        .where('name', isLessThan: '${query.trim()}\uf8ff')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => doc['name'] as String? ?? '')
+        .where((name) => name.isNotEmpty)
+        .toSet() // Remove duplicates
+        .toList()..sort());
   }
 
   Future<void> _updateStock(String product, int quantity, String type) async {
@@ -77,36 +97,71 @@ class _TransactionaddState extends State<Transactionadd> {
     }
   }
 
+  Future<void> _ensurePartyExists(String partyName) async {
+    if (user == null || partyName.trim().isEmpty) return;
+
+    final partyQuery = await FirebaseFirestore.instance
+        .collection(_partyCollection)
+        .where('name', isEqualTo: partyName.trim())
+        .where('user', isEqualTo: user!.uid)
+        .limit(1)
+        .get();
+
+    // Only add if party doesn't exist
+    if (partyQuery.docs.isEmpty) {
+      await FirebaseFirestore.instance.collection(_partyCollection).add({
+        'name': partyName.trim(),
+        'user': user!.uid,
+        'createdAt': DateTime.now(),
+        'lastUpdated': DateTime.now(),
+      });
+    } else {
+      // Update lastUpdated to show recent activity
+      await partyQuery.docs.first.reference.update({
+        'lastUpdated': DateTime.now(),
+      });
+    }
+  }
+
   Future<void> _submitTransaction() async {
     if (!_formKey.currentState!.validate() || user == null) return;
 
     try {
+      final partyName = _partyController.text.trim();
+
+      // Ensure party exists in the appropriate collection
+      await _ensurePartyExists(partyName);
+
+      // Add the transaction
       await FirebaseFirestore.instance.collection('transactions').add({
-        'product': _productController.text.toLowerCase(),
+        'product': _productController.text.toLowerCase().trim(),
         'quantity': int.parse(_quantityController.text),
         'unitPrice': double.parse(_unitPriceController.text),
-        'party': _partyController.text,
+        'party': partyName,
         'date': DateFormat('dd-MM-yyyy').parse(_dateController.text),
         'type': _selectedType,
         'status': _selectedStatus,
         'user': user!.uid,
         'timestamp': DateTime.now(),
       });
-      // if (_selectedType == "Purchase") {
-      // }
-      // else if (_selectedType == "Sale") {
-      //
-      // }
+
+      // Update stock
       await _updateStock(
-        _productController.text.toLowerCase(),
+        _productController.text.toLowerCase().trim(),
         int.parse(_quantityController.text),
         _selectedType,
       );
 
-      Fluttertoast.showToast(msg: "Transaction Added Successfully", backgroundColor: Colors.green);
+      Fluttertoast.showToast(
+          msg: "Transaction Added Successfully",
+          backgroundColor: Colors.green
+      );
       Navigator.pop(context);
     } catch (error) {
-      Fluttertoast.showToast(msg: "Failed to add transaction: $error", backgroundColor: Colors.red);
+      Fluttertoast.showToast(
+          msg: "Failed to add transaction: $error",
+          backgroundColor: Colors.red
+      );
     }
   }
 
@@ -114,8 +169,13 @@ class _TransactionaddState extends State<Transactionadd> {
   void initState() {
     super.initState();
     _dateController.text = DateFormat('dd-MM-yyyy').format(DateTime.now());
+
     _productFocusNode.addListener(() {
-      setState(() => _showSuggestions = _productFocusNode.hasFocus);
+      setState(() => _showProductSuggestions = _productFocusNode.hasFocus);
+    });
+
+    _partyFocusNode.addListener(() {
+      setState(() => _showPartySuggestions = _partyFocusNode.hasFocus);
     });
   }
 
@@ -123,11 +183,59 @@ class _TransactionaddState extends State<Transactionadd> {
   void dispose() {
     _productController.dispose();
     _productFocusNode.dispose();
+    _partyController.dispose();
+    _partyFocusNode.dispose();
     _quantityController.dispose();
     _unitPriceController.dispose();
     _dateController.dispose();
-    _partyController.dispose();
     super.dispose();
+  }
+
+  Widget _buildSuggestionsList({
+    required Stream<List<String>> stream,
+    required TextEditingController controller,
+    required FocusNode focusNode,
+  }) {
+    return StreamBuilder<List<String>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(
+              height: 40,
+              child: Center(child: CircularProgressIndicator())
+          );
+        }
+
+        final suggestions = snapshot.data ?? [];
+        if (suggestions.isEmpty) return const SizedBox.shrink();
+
+        return Container(
+          constraints: const BoxConstraints(maxHeight: 150),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.grey.withOpacity(0.3),
+                  blurRadius: 4
+              )
+            ],
+          ),
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: suggestions.length,
+            itemBuilder: (context, index) => ListTile(
+              dense: true,
+              title: Text(suggestions[index]),
+              onTap: () {
+                controller.text = suggestions[index];
+                focusNode.unfocus();
+              },
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -150,68 +258,46 @@ class _TransactionaddState extends State<Transactionadd> {
                       labelText: "Product",
                       hintText: "Enter Product name",
                     ),
-                    validator: (value) => value?.isEmpty == true ? "Please enter product name" : null,
+                    validator: (value) =>
+                    value?.trim().isEmpty == true ? "Please enter product name" : null,
                     onChanged: (value) => setState(() {}),
                   ),
-                  if (_showSuggestions && _productController.text.trim().isNotEmpty)
-                    StreamBuilder<List<String>>(
+                  if (_showProductSuggestions && _productController.text.trim().isNotEmpty)
+                    _buildSuggestionsList(
                       stream: _getProductSuggestions(_productController.text),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const SizedBox(height: 40, child: Center(child: CircularProgressIndicator()));
-                        }
-
-                        final suggestions = snapshot.data ?? [];
-                        if (suggestions.isEmpty) return const SizedBox.shrink();
-
-                        return Container(
-                          constraints: const BoxConstraints(maxHeight: 150),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.3), blurRadius: 4)],
-                          ),
-                          child: ListView.builder(
-                            shrinkWrap: true,
-                            itemCount: suggestions.length,
-                            itemBuilder: (context, index) => ListTile(
-                              dense: true,
-                              title: Text(suggestions[index]),
-                              onTap: () {
-                                _productController.text = suggestions[index];
-                                _productFocusNode.unfocus();
-                              },
-                            ),
-                          ),
-                        );
-                      },
+                      controller: _productController,
+                      focusNode: _productFocusNode,
                     ),
                 ],
               ),
 
-              // Other form fields
+              const SizedBox(height: 16),
+
+              // Quantity field
               TextFormField(
                 controller: _quantityController,
                 decoration: const InputDecoration(labelText: "Quantity"),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value?.isEmpty == true) return "Please enter quantity";
+                  if (value?.trim().isEmpty == true) return "Please enter quantity";
                   final qty = int.tryParse(value!);
                   return qty == null || qty <= 0 ? "Quantity must be greater than 0" : null;
                 },
               ),
 
+              // Unit Price field
               TextFormField(
                 controller: _unitPriceController,
                 decoration: const InputDecoration(labelText: "Unit Price"),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value?.isEmpty == true) return "Please enter unit price";
+                  if (value?.trim().isEmpty == true) return "Please enter unit price";
                   final price = double.tryParse(value!);
                   return price == null || price <= 0 ? "Unit price must be greater than 0" : null;
                 },
               ),
 
+              // Date field
               TextFormField(
                 controller: _dateController,
                 decoration: const InputDecoration(
@@ -230,25 +316,53 @@ class _TransactionaddState extends State<Transactionadd> {
                     _dateController.text = DateFormat('dd-MM-yyyy').format(pickedDate);
                   }
                 },
-                validator: (value) => value?.isEmpty == true ? "Please select date" : null,
+                validator: (value) =>
+                value?.trim().isEmpty == true ? "Please select date" : null,
               ),
 
+              // Type dropdown
               DropdownButtonFormField<String>(
                 value: _selectedType,
                 items: ['Purchase', 'Sale']
                     .map((type) => DropdownMenuItem(value: type, child: Text(type)))
                     .toList(),
-                onChanged: (value) => setState(() => _selectedType = value!),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedType = value!;
+                    // Clear party field when type changes
+                    _partyController.clear();
+                    _partyFocusNode.unfocus();
+                  });
+                },
                 decoration: const InputDecoration(labelText: "Type"),
                 validator: (value) => value == null ? "Please select type" : null,
               ),
 
-              TextFormField(
-                controller: _partyController,
-                decoration: InputDecoration(labelText: _partyLabel),
-                validator: (value) => value?.isEmpty == true ? "Please enter $_partyLabel name" : null,
+              // Party field with suggestions
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextFormField(
+                    controller: _partyController,
+                    focusNode: _partyFocusNode,
+                    decoration: InputDecoration(
+                      labelText: _partyLabel,
+                      hintText: "Enter $_partyLabel name",
+                    ),
+                    validator: (value) =>
+                    value?.trim().isEmpty == true ? "Please enter $_partyLabel name" : null,
+                    onChanged: (value) => setState(() {}),
+                  ),
+                  if (_showPartySuggestions && _partyController.text.trim().isNotEmpty)
+                    _buildSuggestionsList(
+                      stream: _getPartySuggestions(_partyController.text),
+                      controller: _partyController,
+                      focusNode: _partyFocusNode,
+                    ),
+                ],
               ),
 
+              // Status dropdown
               DropdownButtonFormField<String>(
                 value: _selectedStatus,
                 items: ['Paid', 'Due']

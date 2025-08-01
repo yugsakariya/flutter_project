@@ -1,5 +1,6 @@
  import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter_project/Billing.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter_project/Dashboard.dart';
@@ -121,6 +122,7 @@ class _MyAppState extends State<MyApp> {
       Dashboard(onTabChange: (int idx) => setState(() => _selectedIndex = idx)),
       StockScreen(goToDashboard: _goToDashboard),
       TransactionScreen(goToDashboard: _goToDashboard),
+      NewBillScreen(goToDashboard: _goToDashboard),
     ];
 
     return Scaffold(
@@ -203,6 +205,10 @@ class _MyAppState extends State<MyApp> {
         BottomNavigationBarItem(
           icon: Icon(Icons.swap_horiz),
           label: 'Transactions',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.swap_horiz),
+          label: 'Billing',
         ),
       ],
     );
