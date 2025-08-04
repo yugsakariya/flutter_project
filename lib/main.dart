@@ -1,4 +1,4 @@
- import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_project/Billing.dart';
 import 'dart:async';
@@ -17,31 +17,56 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(MaterialApp(
-    debugShowCheckedModeBanner: false,
-    home: AuthWrapper(),
-  ));
+  runApp(const MyMainApp());
+}
+
+class MyMainApp extends StatelessWidget {
+  const MyMainApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Inventory Management',
+      theme: ThemeData(
+        primarySwatch: Colors.indigo,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      // Set splash screen as initial route
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const SplashScreen(),
+        '/auth': (context) => const AuthWrapper(),
+        '/login': (context) => const Loginscreen(),
+        '/main': (context) => const MyApp(),
+      },
+    );
+  }
 }
 
 class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return SplashScreen();
+          return const SplashScreen();
         }
         if (snapshot.hasData && snapshot.data != null) {
-          return MyApp();
+          return const MyApp();
         }
-        return Loginscreen();
+        return const Loginscreen();
       },
     );
   }
 }
 
 class MyApp extends StatefulWidget {
+  const MyApp({super.key});
+
   @override
   State<MyApp> createState() => _MyAppState();
 }
@@ -78,7 +103,7 @@ class _MyAppState extends State<MyApp> {
   Future<bool> _hasInternetConnection() async {
     try {
       final result = await InternetAddress.lookup('google.com')
-          .timeout(Duration(seconds: 3));
+          .timeout(const Duration(seconds: 3));
       return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
     } catch (_) {
       return false;
@@ -90,10 +115,14 @@ class _MyAppState extends State<MyApp> {
       final hasConnection = result.first != ConnectivityResult.none;
       if (hasConnection) {
         _hasInternetConnection().then((hasInternet) {
-          setState(() => _isConnected = hasInternet);
+          if (mounted) {
+            setState(() => _isConnected = hasInternet);
+          }
         });
       } else {
-        setState(() => _isConnected = false);
+        if (mounted) {
+          setState(() => _isConnected = false);
+        }
       }
     });
   }
@@ -118,7 +147,7 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> _pages = [
+    final List<Widget> pages = [
       Dashboard(onTabChange: (int idx) => setState(() => _selectedIndex = idx)),
       StockScreen(goToDashboard: _goToDashboard),
       TransactionScreen(goToDashboard: _goToDashboard),
@@ -127,7 +156,7 @@ class _MyAppState extends State<MyApp> {
 
     return Scaffold(
       body: _isConnected
-          ? _pages[_selectedIndex]
+          ? pages[_selectedIndex]
           : _buildNoConnectionScreen(),
       bottomNavigationBar: _isConnected ? _buildBottomNavBar() : null,
     );
@@ -138,7 +167,7 @@ class _MyAppState extends State<MyApp> {
       backgroundColor: Colors.white,
       body: Center(
         child: Padding(
-          padding: EdgeInsets.all(32.0),
+          padding: const EdgeInsets.all(32.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -147,7 +176,7 @@ class _MyAppState extends State<MyApp> {
                 color: Colors.red[400],
                 size: 80,
               ),
-              SizedBox(height: 24),
+              const SizedBox(height: 24),
               Text(
                 'No Internet Connection',
                 style: TextStyle(
@@ -157,7 +186,7 @@ class _MyAppState extends State<MyApp> {
                 ),
                 textAlign: TextAlign.center,
               ),
-              SizedBox(height: 12),
+              const SizedBox(height: 12),
               Text(
                 'Please check your connection and try again',
                 style: TextStyle(
@@ -166,15 +195,15 @@ class _MyAppState extends State<MyApp> {
                 ),
                 textAlign: TextAlign.center,
               ),
-              SizedBox(height: 32),
+              const SizedBox(height: 32),
               ElevatedButton.icon(
                 onPressed: _retryConnection,
-                icon: Icon(Icons.refresh),
-                label: Text('Retry'),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.indigo,
                   foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 ),
               ),
             ],
@@ -193,7 +222,7 @@ class _MyAppState extends State<MyApp> {
       selectedItemColor: Colors.indigo,
       unselectedItemColor: Colors.grey[600],
       onTap: _onItemTapped,
-      items: [
+      items: const [
         BottomNavigationBarItem(
           icon: Icon(Icons.dashboard),
           label: 'Dashboard',
@@ -207,7 +236,7 @@ class _MyAppState extends State<MyApp> {
           label: 'Transactions',
         ),
         BottomNavigationBarItem(
-          icon: Icon(Icons.swap_horiz),
+          icon: Icon(Icons.receipt_long),
           label: 'Billing',
         ),
       ],

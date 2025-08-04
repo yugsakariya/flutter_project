@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:http/http.dart' as http;
-import 'login.dart';
-import 'main.dart';
+import 'dart:io';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -16,17 +15,15 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
   bool _isCheckingConnection = true;
-  String _statusMessage = 'Checking internet access...';
+  String _statusMessage = 'Initializing...';
   Color _statusColor = Colors.orange;
-  Timer? _periodicTimer;
-  int _attempts = 0;
-  final int _maxAttempts = 5;
+  Timer? _connectionTimer;
   bool _navigated = false;
 
   @override
   void initState() {
     super.initState();
-    
+
     _animationController = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
@@ -50,88 +47,97 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 
     _animationController.forward();
 
-    // Start periodic internet access check every 3 seconds
-    _periodicTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+    // Start connection check after a brief delay
+    Timer(const Duration(milliseconds: 500), () {
       _checkInternetConnection();
     });
-    // Do an immediate check as well
-    _checkInternetConnection();
   }
 
   Future<void> _checkInternetConnection() async {
-    if (_navigated) return;
+    if (_navigated || !mounted) return;
+
     setState(() {
-      _statusMessage = 'Checking internet access...';
+      _statusMessage = 'Checking internet connection...';
       _statusColor = Colors.orange;
     });
-    _attempts++;
+
     try {
-      final response = await http.get(Uri.parse('https://www.google.com'))
-          .timeout(const Duration(seconds: 5));
-      if (response.statusCode == 200) {
+      // Check connectivity first
+      final connectivityResult = await Connectivity().checkConnectivity();
+
+      if (connectivityResult.first == ConnectivityResult.none) {
         setState(() {
-          _statusMessage = 'Internet connection available';
+          _statusMessage = 'No internet connection';
+          _statusColor = Colors.red;
+        });
+        _proceedAfterDelay();
+        return;
+      }
+
+      // Try to reach a server
+      final result = await InternetAddress.lookup('google.com')
+          .timeout(const Duration(seconds: 5));
+
+      if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
+        setState(() {
+          _statusMessage = 'Connection successful';
           _statusColor = Colors.green;
         });
-        _proceedToMainApp();
-        return;
       } else {
         setState(() {
-          _statusMessage = 'Limited internet access';
+          _statusMessage = 'Limited connectivity';
           _statusColor = Colors.orange;
         });
       }
+
     } catch (e) {
       setState(() {
-        _statusMessage = 'No internet access';
+        _statusMessage = 'Connection timeout';
         _statusColor = Colors.red;
       });
     }
-    if (_attempts >= _maxAttempts) {
-      _proceedToMainApp();
-    }
+
+    _proceedAfterDelay();
   }
 
-  void _proceedToMainApp() {
-    if (_navigated) return;
-    _navigated = true;
-    _periodicTimer?.cancel();
-    setState(() {
-      _isCheckingConnection = false;
-    });
-    // Wait a bit to show the result, then proceed
-    Timer(const Duration(seconds: 1), () {
+  void _proceedAfterDelay() {
+    if (_navigated || !mounted) return;
+
+    _connectionTimer = Timer(const Duration(seconds: 2), () {
       _navigateToMainApp();
     });
   }
 
   void _navigateToMainApp() {
-    Navigator.pushReplacement(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => Loginscreen(),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 500),
-      ),
-    );
+    if (_navigated || !mounted) return;
+
+    _navigated = true;
+    _connectionTimer?.cancel();
+
+    setState(() {
+      _isCheckingConnection = false;
+    });
+
+    // Navigate to AuthWrapper (which handles login state)
+    Navigator.of(context).pushReplacementNamed('/auth');
   }
 
   @override
   void dispose() {
     _animationController.dispose();
-    _periodicTimer?.cancel();
+    _connectionTimer?.cancel();
     super.dispose();
   }
 
   IconData _getStatusIcon() {
-    if (_statusColor == Colors.green) {
-      return Icons.wifi;
-    } else if (_statusColor == Colors.orange) {
-      return Icons.wifi_off;
-    } else {
-      return Icons.error;
+    switch (_statusColor) {
+      case Colors.green:
+        return Icons.wifi;
+      case Colors.orange:
+        return Icons.wifi_1_bar;
+      case Colors.red:
+      default:
+        return Icons.wifi_off;
     }
   }
 
@@ -139,67 +145,116 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Center(
-        child: AnimatedBuilder(
-          animation: _animationController,
-          builder: (context, child) {
-            return FadeTransition(
-              opacity: _fadeAnimation,
-              child: ScaleTransition(
-                scale: _scaleAnimation,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 150,
-                      height: 150,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.3),
-                            spreadRadius: 2,
-                            blurRadius: 10,
-                            offset: const Offset(0, 5),
+      body: SafeArea(
+        child: Center(
+          child: AnimatedBuilder(
+            animation: _animationController,
+            builder: (context, child) {
+              return FadeTransition(
+                opacity: _fadeAnimation,
+                child: ScaleTransition(
+                  scale: _scaleAnimation,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Logo Container
+                      Container(
+                        width: 150,
+                        height: 150,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.3),
+                              spreadRadius: 2,
+                              blurRadius: 10,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: Image.asset(
+                            'assets/logo.png',
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              // Fallback if logo doesn't exist
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.indigo.shade100,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Icon(
+                                  Icons.inventory_2,
+                                  size: 80,
+                                  color: Colors.indigo,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 30),
+
+                      // App Title
+                      const Text(
+                        'Inventory Management',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.indigo,
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // Subtitle
+                      const Text(
+                        'Manage your stock efficiently',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey,
+                        ),
+                      ),
+
+                      const SizedBox(height: 50),
+
+                      // Loading indicator
+                      const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.indigo),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Status message
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _getStatusIcon(),
+                            color: _statusColor,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _statusMessage,
+                            style: TextStyle(
+                              color: _statusColor,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ],
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: Image.asset(
-                          'assets/logo.png',
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 30),
-                    const Text(
-                      'Inventory Management',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.indigo,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      'Manage your stock efficiently',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 50),
-                    const CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.indigo),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
   }
-} 
+}

@@ -116,7 +116,6 @@ class _TransactionupdateState extends State<Transactionupdate> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-
   Future<void> _updateStocks() async {
     if (user == null) return;
 

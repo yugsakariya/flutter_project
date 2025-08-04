@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
@@ -10,12 +12,36 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController(text: 'Ruchit Kadeval');
-  final _phoneController = TextEditingController(text: '9876543210');
-  final _companyController = TextEditingController(text: 'RK Enterprises');
-  final _addressController = TextEditingController(text: '123, MG Road, Ahmedabad');
-  final _gstinController = TextEditingController(text: '24ABCDE1234F1Z5');
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _companyController = TextEditingController();
+  final _addressController = TextEditingController();
+  final _gstinController = TextEditingController();
+  final user = FirebaseAuth.instance.currentUser!;
+  bool _newProfile = false;
 
+  Future<void>_loadProfiledata () async{
+   final doc = await FirebaseFirestore.instance.collection('profile').where('user',isEqualTo: user.uid).limit(1).get();
+   try{
+     if (doc.docs.isEmpty) {
+       setState(() => _newProfile = true);
+     }
+     else {
+       final data = doc.docs.first.data();
+       setState(() {
+         _nameController.text = data['name'];
+         _phoneController.text = data['phone'];
+         _companyController.text = data['company'];
+         _addressController.text = data['address'];
+         _gstinController.text = data['gstin'];
+         // doc_id = doc.id;
+       });
+     }
+   }
+   catch(e){
+     print(e);
+   }
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -61,6 +87,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 child: ElevatedButton.icon(
                   onPressed: () {
                     if (_formKey.currentState!.validate()) {
+                      if(_newProfile){
+                        FirebaseFirestore.instance.collection("profile").add(
+                            {
+                              'name':_nameController.text,
+                              'phone':_phoneController.text,
+                              'company':_companyController.text,
+                              'address': _addressController.text,
+                              'gstin': _gstinController.text
+                            });
+                      }
+                     else if(!_newProfile){
+                       final doc = FirebaseFirestore.instance.collection('profile').where('user',isEqualTo: user.uid).limit(1).get();
+
+                     }
                       Fluttertoast.showToast(msg: "Profile Updated");
                       Navigator.pop(context); // return to profile screen
                     }
