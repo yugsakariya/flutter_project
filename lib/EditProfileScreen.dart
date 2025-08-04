@@ -98,8 +98,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             });
                       }
                      else if(!_newProfile){
-                       final doc = FirebaseFirestore.instance.collection('profile').where('user',isEqualTo: user.uid).limit(1).get();
-
+                       FirebaseFirestore.instance.collection('profile').where('user',isEqualTo: user.uid).limit(1).get().then((value) {
+                         value.docs.first.reference.update({
+                           'name':_nameController.text,
+                           'phone':_phoneController.text,
+                           'company':_companyController.text,
+                           'address': _addressController.text,
+                           'gstin': _gstinController.text
+                         });
+                       });
                      }
                       Fluttertoast.showToast(msg: "Profile Updated");
                       Navigator.pop(context); // return to profile screen

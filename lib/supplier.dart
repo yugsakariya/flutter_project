@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -6,6 +7,7 @@ class SupplierScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user= FirebaseAuth.instance.currentUser!;
     return Scaffold(
       appBar: AppBar(
         title: const Text("Suppliers"),
@@ -13,7 +15,7 @@ class SupplierScreen extends StatelessWidget {
         foregroundColor: Colors.white,
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('suppliers').snapshots(),
+        stream: FirebaseFirestore.instance.collection('suppliers').where('user',isEqualTo: user.uid).snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) return Center(child: Text("Error loading suppliers"));
           if (snapshot.connectionState == ConnectionState.waiting) return Center(child: CircularProgressIndicator());

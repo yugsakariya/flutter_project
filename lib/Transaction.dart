@@ -70,6 +70,8 @@ class _TransactionScreenState extends State<TransactionScreen> {
   }
 
   // Delete transaction and update stock
+  // Delete transaction and update stock
+  // Delete transaction and update stock
   Future<void> _deleteTransaction(String docId) async {
     try {
       // Get transaction document
@@ -88,6 +90,8 @@ class _TransactionScreenState extends State<TransactionScreen> {
       final type = data['type'] as String;
       final quantity = data['quantity'] as int;
 
+      print("Deleting transaction: Product=$product, Type=$type, Quantity=$quantity");
+
       // Find corresponding stock document
       final stockQuery = await FirebaseFirestore.instance
           .collection('stocks')
@@ -96,28 +100,70 @@ class _TransactionScreenState extends State<TransactionScreen> {
           .limit(1)
           .get();
 
+      if (stockQuery.docs.isEmpty) {
+        print("No stock document found for product: $product");
+        // Just delete the transaction if no stock found
+        await FirebaseFirestore.instance.collection('transactions').doc(docId).delete();
+        Navigator.of(context, rootNavigator: true).pop();
+        _showToast("Transaction deleted (no stock found)", Colors.orange);
+        return;
+      }
+
+      // Get current stock data for debugging
+      final currentStock = stockQuery.docs.first.data();
+      final currentQuantity = currentStock['quantity'] as int;
+      final currentPurchase = currentStock['purchase'] as int;
+      final currentSales = currentStock['sales'] as int;
+
+      print("Current stock - Quantity: $currentQuantity, Purchase: $currentPurchase, Sales: $currentSales");
+
       // Use batch for atomic operations
       final batch = FirebaseFirestore.instance.batch();
+
+      // Delete the transaction
       batch.delete(FirebaseFirestore.instance.collection('transactions').doc(docId));
 
-      if (stockQuery.docs.isNotEmpty) {
-        final stockRef = FirebaseFirestore.instance
-            .collection('stocks')
-            .doc(stockQuery.docs.first.id);
+      final stockRef = FirebaseFirestore.instance
+          .collection('stocks')
+          .doc(stockQuery.docs.first.id);
 
-        // Reverse the stock change
-        final quantityChange = type == 'Purchase' ? -quantity : quantity;
-        batch.update(stockRef, {'quantity': FieldValue.increment(quantityChange)});
+      // Calculate quantity change to reverse the transaction
+      // Purchase increases stock, so deleting should decrease it
+      // Sale decreases stock, so deleting should increase it
+      final quantityChange = type == 'Purchase' ? -quantity : quantity;
+      print("Quantity change to apply: $quantityChange");
 
-        // Check if we should delete the stock document
-        final remainingTransactions = await FirebaseFirestore.instance
-            .collection('transactions')
-            .where('product', isEqualTo: product)
-            .get();
+      // Check remaining transactions BEFORE deleting current one
+      final allTransactionsQuery = await FirebaseFirestore.instance
+          .collection('transactions')
+          .where('user', isEqualTo: user!.uid)
+          .where('product', isEqualTo: product)
+          .get();
 
-        if (remainingTransactions.docs.length == 1) { // Only current transaction
-          batch.delete(stockRef);
+      print("Total transactions for this product: ${allTransactionsQuery.docs.length}");
+
+      // If this is the last transaction for this product, delete stock entry
+      if (allTransactionsQuery.docs.length <= 1) {
+        print("Deleting stock entry as this is the last transaction");
+        batch.delete(stockRef);
+      } else {
+        // Update stock quantity and purchase/sales totals
+        print("Updating stock quantity by $quantityChange");
+
+        Map<String, dynamic> updateData = {
+          'quantity': FieldValue.increment(quantityChange)
+        };
+
+        // Also update the purchase or sales total
+        if (type == 'Purchase') {
+          updateData['purchase'] = FieldValue.increment(-quantity);
+          print("Decreasing purchase total by $quantity");
+        } else {
+          updateData['sales'] = FieldValue.increment(-quantity);
+          print("Decreasing sales total by $quantity");
         }
+
+        batch.update(stockRef, updateData);
       }
 
       await batch.commit();
@@ -125,6 +171,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
       _showToast("Transaction deleted successfully", Colors.green);
 
     } catch (error) {
+      print("Error deleting transaction: $error");
       _showToast("Failed to delete transaction: $error", Colors.red);
     }
   }

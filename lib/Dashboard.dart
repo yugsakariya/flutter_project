@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_project/Customers.dart';
 import 'package:flutter_project/Stocks.dart';
 import 'package:flutter_project/Profile.dart';
 import 'package:flutter_project/LowStocks.dart';
@@ -236,8 +237,7 @@ class _DashboardState extends State<Dashboard> {
     return Expanded(
       child: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
-            .collection("stocks")
-            .where('quantity', isLessThanOrEqualTo: 10)
+            .collection("suppliers")
             .where("user", isEqualTo: user.uid)
             .snapshots(),
         builder: (context, snapshot) {
@@ -277,8 +277,7 @@ class _DashboardState extends State<Dashboard> {
     return Expanded(
       child: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
-            .collection("stocks")
-            .where('quantity', isLessThanOrEqualTo: 10)
+            .collection("customers")
             .where("user", isEqualTo: user.uid)
             .snapshots(),
         builder: (context, snapshot) {
@@ -287,7 +286,7 @@ class _DashboardState extends State<Dashboard> {
           return GestureDetector(
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (context) => const SupplierScreen()),
+              MaterialPageRoute(builder: (context) => const CustomerScreen()),
             ),
             child: Card(
               elevation: 3,
