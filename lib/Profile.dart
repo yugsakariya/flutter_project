@@ -41,11 +41,9 @@ class _ProfileState extends State<Profile> {
             ),
           );
         }
-
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           Navigator.push(context,MaterialPageRoute(builder: (_)=>EditProfileScreen()));
         }
-
         // Fix: Correct way to access document data
         final data = snapshot.data!.docs.first.data() as Map<String, dynamic>;
 

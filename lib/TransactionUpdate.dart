@@ -57,33 +57,47 @@ class _TransactionupdateState extends State<Transactionupdate> {
   Stream<List<String>> _getProductSuggestions(String query) {
     if (query.trim().isEmpty) return Stream.value([]);
 
+    final lowerQuery = query.trim().toLowerCase();
+
     return FirebaseFirestore.instance
         .collection('stocks')
         .where('user', isEqualTo: user?.uid)
-        .where('product', isGreaterThanOrEqualTo: query.trim().toLowerCase())
-        .where('product', isLessThan: '${query.trim().toLowerCase()}\uf8ff')
         .snapshots()
-        .map((snapshot) => snapshot.docs
-        .map((doc) => doc['product'] as String? ?? '')
-        .where((product) => product.isNotEmpty)
-        .toSet()
-        .toList()..sort());
+        .map((snapshot) {
+      final products = snapshot.docs
+          .map((doc) => doc['product'] as String? ?? '')
+          .where((product) =>
+      product.isNotEmpty &&
+          product.toLowerCase().contains(lowerQuery))
+          .toSet()
+          .toList();
+
+      products.sort();
+      return products;
+    });
   }
 
   Stream<List<String>> _getPartySuggestions(String query) {
-    if (query.trim().isEmpty) return Stream.value([]);
+    if (query.trim().isEmpty || _type.isEmpty) return Stream.value([]);
+
+    final lowerQuery = query.trim().toLowerCase();
 
     return FirebaseFirestore.instance
         .collection(_partyCollection)
         .where('user', isEqualTo: user?.uid)
-        .where('name', isGreaterThanOrEqualTo: query.trim())
-        .where('name', isLessThan: '${query.trim()}\uf8ff')
         .snapshots()
-        .map((snapshot) => snapshot.docs
-        .map((doc) => doc['name'] as String? ?? '')
-        .where((name) => name.isNotEmpty)
-        .toSet()
-        .toList()..sort());
+        .map((snapshot) {
+      final parties = snapshot.docs
+          .map((doc) => doc['name'] as String? ?? '')
+          .where((name) =>
+      name.isNotEmpty &&
+          name.toLowerCase().contains(lowerQuery))
+          .toSet()
+          .toList();
+
+      parties.sort();
+      return parties;
+    });
   }
 
   Future<void> _loadTransactionData() async {
@@ -116,6 +130,7 @@ class _TransactionupdateState extends State<Transactionupdate> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
   Future<void> _updateStocks() async {
     if (user == null) return;
 
@@ -341,18 +356,26 @@ class _TransactionupdateState extends State<Transactionupdate> {
           );
         }
 
+        if (snapshot.hasError) {
+          print("Suggestion error: ${snapshot.error}");
+          return const SizedBox.shrink();
+        }
+
         final suggestions = snapshot.data ?? [];
         if (suggestions.isEmpty) return const SizedBox.shrink();
 
         return Container(
           constraints: const BoxConstraints(maxHeight: 150),
+          margin: const EdgeInsets.only(top: 4),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300),
             boxShadow: [
               BoxShadow(
                   color: Colors.grey.withOpacity(0.3),
-                  blurRadius: 4
+                  blurRadius: 4,
+                  offset: const Offset(0, 2)
               )
             ],
           ),
@@ -361,10 +384,20 @@ class _TransactionupdateState extends State<Transactionupdate> {
             itemCount: suggestions.length,
             itemBuilder: (context, index) => ListTile(
               dense: true,
-              title: Text(suggestions[index]),
+              title: Text(
+                suggestions[index],
+                style: const TextStyle(fontSize: 14),
+              ),
               onTap: () {
                 controller.text = suggestions[index];
                 focusNode.unfocus();
+                setState(() {
+                  if (controller == _productController) {
+                    _showProductSuggestions = false;
+                  } else {
+                    _showPartySuggestions = false;
+                  }
+                });
               },
             ),
           ),
@@ -383,6 +416,7 @@ class _TransactionupdateState extends State<Transactionupdate> {
         key: _formKey,
         child: SingleChildScrollView(
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               // Product field with suggestions
               Column(
@@ -394,6 +428,7 @@ class _TransactionupdateState extends State<Transactionupdate> {
                     decoration: const InputDecoration(
                       labelText: "Product",
                       hintText: "Enter Product name",
+                      border: OutlineInputBorder(),
                     ),
                     validator: (v) => v?.trim().isEmpty == true ? "Product name required" : null,
                     onChanged: (value) => setState(() {}),
@@ -411,7 +446,10 @@ class _TransactionupdateState extends State<Transactionupdate> {
 
               TextFormField(
                 controller: _quantityController,
-                decoration: const InputDecoration(labelText: "Quantity"),
+                decoration: const InputDecoration(
+                  labelText: "Quantity",
+                  border: OutlineInputBorder(),
+                ),
                 keyboardType: TextInputType.number,
                 validator: (v) {
                   if (v?.trim().isEmpty == true) return "Quantity required";
@@ -420,9 +458,14 @@ class _TransactionupdateState extends State<Transactionupdate> {
                 },
               ),
 
+              const SizedBox(height: 16),
+
               TextFormField(
                 controller: _unitPriceController,
-                decoration: const InputDecoration(labelText: "Unit Price"),
+                decoration: const InputDecoration(
+                  labelText: "Unit Price",
+                  border: OutlineInputBorder(),
+                ),
                 keyboardType: TextInputType.number,
                 validator: (v) {
                   if (v?.trim().isEmpty == true) return "Unit price required";
@@ -430,6 +473,8 @@ class _TransactionupdateState extends State<Transactionupdate> {
                   return price == null || price <= 0 ? "Enter a valid price" : null;
                 },
               ),
+
+              const SizedBox(height: 16),
 
               DropdownButtonFormField<String>(
                 value: _type.isEmpty ? null : _type,
@@ -442,11 +487,17 @@ class _TransactionupdateState extends State<Transactionupdate> {
                     // Clear party field when type changes
                     _partyController.clear();
                     _partyFocusNode.unfocus();
+                    _showPartySuggestions = false;
                   });
                 },
-                decoration: const InputDecoration(labelText: "Type"),
+                decoration: const InputDecoration(
+                  labelText: "Type",
+                  border: OutlineInputBorder(),
+                ),
                 validator: (v) => v == null ? "Type required" : null,
               ),
+
+              const SizedBox(height: 16),
 
               // Party field with suggestions
               Column(
@@ -458,11 +509,14 @@ class _TransactionupdateState extends State<Transactionupdate> {
                     decoration: InputDecoration(
                       labelText: _partyLabel,
                       hintText: "Enter $_partyLabel name",
+                      border: const OutlineInputBorder(),
                     ),
                     validator: (v) => v?.trim().isEmpty == true ? "Please enter $_partyLabel name" : null,
                     onChanged: (value) => setState(() {}),
                   ),
-                  if (_showPartySuggestions && _partyController.text.trim().isNotEmpty)
+                  if (_showPartySuggestions &&
+                      _partyController.text.trim().isNotEmpty &&
+                      _type.isNotEmpty)
                     _buildSuggestionsList(
                       stream: _getPartySuggestions(_partyController.text),
                       controller: _partyController,
@@ -471,11 +525,14 @@ class _TransactionupdateState extends State<Transactionupdate> {
                 ],
               ),
 
+              const SizedBox(height: 16),
+
               TextFormField(
                 controller: _dateController,
                 decoration: const InputDecoration(
                   labelText: "Date",
                   suffixIcon: Icon(Icons.calendar_today),
+                  border: OutlineInputBorder(),
                 ),
                 readOnly: true,
                 onTap: () async {
@@ -492,13 +549,18 @@ class _TransactionupdateState extends State<Transactionupdate> {
                 validator: (v) => v?.trim().isEmpty == true ? "Date required" : null,
               ),
 
+              const SizedBox(height: 16),
+
               DropdownButtonFormField<String>(
                 value: _status.isEmpty ? null : _status,
                 items: ['Paid', 'Due']
                     .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                     .toList(),
                 onChanged: (v) => setState(() => _status = v!),
-                decoration: const InputDecoration(labelText: "Status"),
+                decoration: const InputDecoration(
+                  labelText: "Status",
+                  border: OutlineInputBorder(),
+                ),
                 validator: (v) => v == null ? "Status required" : null,
               ),
             ],

@@ -25,6 +25,7 @@ class _TransactionaddState extends State<Transactionadd> {
   String _selectedStatus = 'Paid';
   bool _showProductSuggestions = false;
   bool _showPartySuggestions = false;
+  bool _isLoading = false; // Added loading state
 
   final User? user = FirebaseAuth.instance.currentUser;
 
@@ -34,33 +35,45 @@ class _TransactionaddState extends State<Transactionadd> {
   Stream<List<String>> _getProductSuggestions(String query) {
     if (query.trim().isEmpty) return Stream.value([]);
 
+    final lowercaseQuery = query.trim().toLowerCase();
+
     return FirebaseFirestore.instance
         .collection('stocks')
         .where('user', isEqualTo: user?.uid)
-        .where('product', isGreaterThanOrEqualTo: query.trim().toLowerCase())
-        .where('product', isLessThan: '${query.trim().toLowerCase()}\uf8ff')
         .snapshots()
-        .map((snapshot) => snapshot.docs
-        .map((doc) => doc['product'] as String? ?? '')
-        .where((product) => product.isNotEmpty)
-        .toSet() // Remove duplicates
-        .toList()..sort());
+        .map((snapshot) {
+      final products = snapshot.docs
+          .map((doc) => doc['product'] as String? ?? '')
+          .where((product) => product.isNotEmpty &&
+          product.toLowerCase().contains(lowercaseQuery))
+          .toSet()
+          .toList();
+
+      products.sort();
+      return products.take(10).toList(); // Limit to 10 suggestions
+    });
   }
 
   Stream<List<String>> _getPartySuggestions(String query) {
     if (query.trim().isEmpty) return Stream.value([]);
 
+    final lowercaseQuery = query.trim().toLowerCase();
+
     return FirebaseFirestore.instance
         .collection(_partyCollection)
         .where('user', isEqualTo: user?.uid)
-        .where('name', isGreaterThanOrEqualTo: query.trim())
-        .where('name', isLessThan: '${query.trim()}\uf8ff')
         .snapshots()
-        .map((snapshot) => snapshot.docs
-        .map((doc) => doc['name'] as String? ?? '')
-        .where((name) => name.isNotEmpty)
-        .toSet() // Remove duplicates
-        .toList()..sort());
+        .map((snapshot) {
+      final parties = snapshot.docs
+          .map((doc) => doc['name'] as String? ?? '')
+          .where((name) => name.isNotEmpty &&
+          name.toLowerCase().contains(lowercaseQuery))
+          .toSet()
+          .toList();
+
+      parties.sort();
+      return parties.take(10).toList(); // Limit to 10 suggestions
+    });
   }
 
   Future<void> _updateStock(String product, int quantity, String type) async {
@@ -126,6 +139,10 @@ class _TransactionaddState extends State<Transactionadd> {
   Future<void> _submitTransaction() async {
     if (!_formKey.currentState!.validate() || user == null) return;
 
+    setState(() {
+      _isLoading = true; // Start loading
+    });
+
     try {
       final partyName = _partyController.text.trim();
 
@@ -162,6 +179,10 @@ class _TransactionaddState extends State<Transactionadd> {
           msg: "Failed to add transaction: $error",
           backgroundColor: Colors.red
       );
+    } finally {
+      setState(() {
+        _isLoading = false; // Stop loading
+      });
     }
   }
 
@@ -200,9 +221,20 @@ class _TransactionaddState extends State<Transactionadd> {
       stream: stream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SizedBox(
-              height: 40,
-              child: Center(child: CircularProgressIndicator())
+          return Container(
+            height: 40,
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.grey.withOpacity(0.3),
+                    blurRadius: 4
+                )
+              ],
+            ),
+            child: const Center(child: CircularProgressIndicator()),
           );
         }
 
@@ -210,27 +242,41 @@ class _TransactionaddState extends State<Transactionadd> {
         if (suggestions.isEmpty) return const SizedBox.shrink();
 
         return Container(
-          constraints: const BoxConstraints(maxHeight: 150),
+          constraints: const BoxConstraints(maxHeight: 200),
+          margin: const EdgeInsets.only(top: 4),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300),
             boxShadow: [
               BoxShadow(
                   color: Colors.grey.withOpacity(0.3),
-                  blurRadius: 4
+                  blurRadius: 4,
+                  offset: const Offset(0, 2)
               )
             ],
           ),
-          child: ListView.builder(
+          child: ListView.separated(
             shrinkWrap: true,
+            padding: EdgeInsets.zero,
             itemCount: suggestions.length,
-            itemBuilder: (context, index) => ListTile(
-              dense: true,
-              title: Text(suggestions[index]),
+            separatorBuilder: (context, index) => Divider(
+              height: 1,
+              color: Colors.grey.shade200,
+            ),
+            itemBuilder: (context, index) => InkWell(
               onTap: () {
                 controller.text = suggestions[index];
                 focusNode.unfocus();
+                setState(() {}); // Refresh to hide suggestions
               },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Text(
+                  suggestions[index],
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ),
             ),
           ),
         );
@@ -254,15 +300,19 @@ class _TransactionaddState extends State<Transactionadd> {
                   TextFormField(
                     controller: _productController,
                     focusNode: _productFocusNode,
+                    enabled: !_isLoading, // Disable when loading
                     decoration: const InputDecoration(
                       labelText: "Product",
                       hintText: "Enter Product name",
+                      border: OutlineInputBorder(),
                     ),
                     validator: (value) =>
                     value?.trim().isEmpty == true ? "Please enter product name" : null,
                     onChanged: (value) => setState(() {}),
                   ),
-                  if (_showProductSuggestions && _productController.text.trim().isNotEmpty)
+                  if (_showProductSuggestions &&
+                      _productController.text.trim().isNotEmpty &&
+                      !_isLoading)
                     _buildSuggestionsList(
                       stream: _getProductSuggestions(_productController.text),
                       controller: _productController,
@@ -276,7 +326,11 @@ class _TransactionaddState extends State<Transactionadd> {
               // Quantity field
               TextFormField(
                 controller: _quantityController,
-                decoration: const InputDecoration(labelText: "Quantity"),
+                enabled: !_isLoading, // Disable when loading
+                decoration: const InputDecoration(
+                  labelText: "Quantity",
+                  border: OutlineInputBorder(),
+                ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
                   if (value?.trim().isEmpty == true) return "Please enter quantity";
@@ -285,10 +339,16 @@ class _TransactionaddState extends State<Transactionadd> {
                 },
               ),
 
+              const SizedBox(height: 16),
+
               // Unit Price field
               TextFormField(
                 controller: _unitPriceController,
-                decoration: const InputDecoration(labelText: "Unit Price"),
+                enabled: !_isLoading, // Disable when loading
+                decoration: const InputDecoration(
+                  labelText: "Unit Price",
+                  border: OutlineInputBorder(),
+                ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
                   if (value?.trim().isEmpty == true) return "Please enter unit price";
@@ -297,15 +357,19 @@ class _TransactionaddState extends State<Transactionadd> {
                 },
               ),
 
+              const SizedBox(height: 16),
+
               // Date field
               TextFormField(
                 controller: _dateController,
+                enabled: !_isLoading, // Disable when loading
                 decoration: const InputDecoration(
                   labelText: "Date",
                   suffixIcon: Icon(Icons.calendar_today),
+                  border: OutlineInputBorder(),
                 ),
                 readOnly: true,
-                onTap: () async {
+                onTap: _isLoading ? null : () async { // Disable tap when loading
                   final pickedDate = await showDatePicker(
                     context: context,
                     initialDate: DateTime.now(),
@@ -320,13 +384,15 @@ class _TransactionaddState extends State<Transactionadd> {
                 value?.trim().isEmpty == true ? "Please select date" : null,
               ),
 
+              const SizedBox(height: 16),
+
               // Type dropdown
               DropdownButtonFormField<String>(
                 value: _selectedType,
                 items: ['Purchase', 'Sale']
                     .map((type) => DropdownMenuItem(value: type, child: Text(type)))
                     .toList(),
-                onChanged: (value) {
+                onChanged: _isLoading ? null : (value) { // Disable when loading
                   setState(() {
                     _selectedType = value!;
                     // Clear party field when type changes
@@ -334,9 +400,14 @@ class _TransactionaddState extends State<Transactionadd> {
                     _partyFocusNode.unfocus();
                   });
                 },
-                decoration: const InputDecoration(labelText: "Type"),
+                decoration: const InputDecoration(
+                  labelText: "Type",
+                  border: OutlineInputBorder(),
+                ),
                 validator: (value) => value == null ? "Please select type" : null,
               ),
+
+              const SizedBox(height: 16),
 
               // Party field with suggestions
               Column(
@@ -345,15 +416,19 @@ class _TransactionaddState extends State<Transactionadd> {
                   TextFormField(
                     controller: _partyController,
                     focusNode: _partyFocusNode,
+                    enabled: !_isLoading, // Disable when loading
                     decoration: InputDecoration(
                       labelText: _partyLabel,
                       hintText: "Enter $_partyLabel name",
+                      border: const OutlineInputBorder(),
                     ),
                     validator: (value) =>
                     value?.trim().isEmpty == true ? "Please enter $_partyLabel name" : null,
                     onChanged: (value) => setState(() {}),
                   ),
-                  if (_showPartySuggestions && _partyController.text.trim().isNotEmpty)
+                  if (_showPartySuggestions &&
+                      _partyController.text.trim().isNotEmpty &&
+                      !_isLoading)
                     _buildSuggestionsList(
                       stream: _getPartySuggestions(_partyController.text),
                       controller: _partyController,
@@ -362,14 +437,19 @@ class _TransactionaddState extends State<Transactionadd> {
                 ],
               ),
 
+              const SizedBox(height: 16),
+
               // Status dropdown
               DropdownButtonFormField<String>(
                 value: _selectedStatus,
                 items: ['Paid', 'Due']
                     .map((status) => DropdownMenuItem(value: status, child: Text(status)))
                     .toList(),
-                onChanged: (value) => setState(() => _selectedStatus = value!),
-                decoration: const InputDecoration(labelText: "Status"),
+                onChanged: _isLoading ? null : (value) => setState(() => _selectedStatus = value!), // Disable when loading
+                decoration: const InputDecoration(
+                  labelText: "Status",
+                  border: OutlineInputBorder(),
+                ),
                 validator: (value) => value == null ? "Please select status" : null,
               ),
             ],
@@ -378,14 +458,23 @@ class _TransactionaddState extends State<Transactionadd> {
       ),
       actions: [
         ElevatedButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _isLoading ? null : () => Navigator.pop(context), // Disable when loading
           style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
           child: const Text("Cancel", style: TextStyle(color: Colors.white)),
         ),
         ElevatedButton(
-          onPressed: _submitTransaction,
+          onPressed: _isLoading ? null : _submitTransaction, // Disable when loading
           style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-          child: const Text("Submit", style: TextStyle(color: Colors.white)),
+          child: _isLoading
+              ? const SizedBox(
+            height: 20,
+            width: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          )
+              : const Text("Submit", style: TextStyle(color: Colors.white)),
         ),
       ],
     );

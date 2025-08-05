@@ -1,153 +1,276 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
+import 'EditProfileScreen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-class EditProfileScreen extends StatefulWidget {
-  const EditProfileScreen({super.key});
+class Profile extends StatefulWidget {
+  const Profile({super.key});
 
   @override
-  State<EditProfileScreen> createState() => _EditProfileScreenState();
+  State<Profile> createState() => _ProfileState();
 }
 
-class _EditProfileScreenState extends State<EditProfileScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _companyController = TextEditingController();
-  final _addressController = TextEditingController();
-  final _gstinController = TextEditingController();
+class _ProfileState extends State<Profile> {
   final user = FirebaseAuth.instance.currentUser!;
-  bool _newProfile = false;
 
-  Future<void>_loadProfiledata () async{
-   final doc = await FirebaseFirestore.instance.collection('profile').where('user',isEqualTo: user.uid).limit(1).get();
-   try{
-     if (doc.docs.isEmpty) {
-       setState(() => _newProfile = true);
-     }
-     else {
-       final data = doc.docs.first.data();
-       setState(() {
-         _nameController.text = data['name'];
-         _phoneController.text = data['phone'];
-         _companyController.text = data['company'];
-         _addressController.text = data['address'];
-         _gstinController.text = data['gstin'];
-         // doc_id = doc.id;
-       });
-     }
-   }
-   catch(e){
-     print(e);
-   }
+  Future<QuerySnapshot> _getdata() {
+    return FirebaseFirestore.instance
+        .collection('profile')
+        .where('user', isEqualTo: user.uid)
+        .limit(1)
+        .get();
   }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Profile'),
-        titleTextStyle: TextStyle(
-          fontSize: 22,
-          color: Colors.white,
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.indigo,
-        iconTheme: const IconThemeData(color: Colors.white), // <-- makes back arrow white
-        foregroundColor: Colors.white, // also sets text/icon color to white
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            children: [
-              const SizedBox(height: 20),
-              CircleAvatar(
-                radius: 55,
-                backgroundColor: Colors.blueAccent.withOpacity(0.1),
-                child: const CircleAvatar(
-                  radius: 50,
-                  backgroundImage: AssetImage('assets/avatar.png'),
-                ),
+    return FutureBuilder<QuerySnapshot>(
+      future: _getdata(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Scaffold(
+            body: Center(
+              child: Text('Error: ${snapshot.error}'),
+            ),
+          );
+        }
+
+        // If no profile data exists, navigate to edit screen
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Scaffold(
+            backgroundColor: Colors.white,
+            appBar: AppBar(
+              title: const Text('Profile'),
+              titleTextStyle: const TextStyle(
+                fontSize: 22,
+                color: Colors.white,
               ),
-              const SizedBox(height: 20),
-
-              _buildTextField(_nameController, "Name", Icons.person),
-              _buildTextField(_phoneController, "Phone", Icons.phone,
-                  prefix: "+91 ", keyboard: TextInputType.phone, maxLength: 10),
-              _buildTextField(_companyController, "Company Name", Icons.business),
-              _buildTextField(_addressController, "Company Address", Icons.location_on),
-              _buildTextField(_gstinController, "GSTIN", Icons.qr_code),
-
-              const SizedBox(height: 30),
-
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    if (_formKey.currentState!.validate()) {
-                      if(_newProfile){
-                        FirebaseFirestore.instance.collection("profile").add(
-                            {
-                              'name':_nameController.text,
-                              'phone':_phoneController.text,
-                              'company':_companyController.text,
-                              'address': _addressController.text,
-                              'gstin': _gstinController.text
-                            });
+              centerTitle: true,
+              backgroundColor: Colors.indigo,
+              iconTheme: const IconThemeData(color: Colors.white),
+              foregroundColor: Colors.white,
+            ),
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.person_add,
+                    size: 80,
+                    color: Colors.grey,
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'No Profile Found',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Please create your profile first',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 30),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const EditProfileScreen(),
+                        ),
+                      );
+                      // Refresh the screen if profile was saved
+                      if (result == true) {
+                        setState(() {});
                       }
-                     else if(!_newProfile){
-                       FirebaseFirestore.instance.collection('profile').where('user',isEqualTo: user.uid).limit(1).get().then((value) {
-                         value.docs.first.reference.update({
-                           'name':_nameController.text,
-                           'phone':_phoneController.text,
-                           'company':_companyController.text,
-                           'address': _addressController.text,
-                           'gstin': _gstinController.text
-                         });
-                       });
-                     }
-                      Fluttertoast.showToast(msg: "Profile Updated");
-                      Navigator.pop(context); // return to profile screen
-                    }
-                  },
-                  icon: const Icon(Icons.save,color: Colors.white),
-                  label: const Text("Save",style: TextStyle(color: Colors.white),),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                    },
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    label: const Text(
+                      'Create Profile',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.indigo,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // Profile exists, show profile data
+        final data = snapshot.data!.docs.first.data() as Map<String, dynamic>;
+
+        return Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            title: const Text('Profile'),
+            titleTextStyle: const TextStyle(
+              fontSize: 22,
+              color: Colors.white,
+            ),
+            centerTitle: true,
+            backgroundColor: Colors.indigo,
+            iconTheme: const IconThemeData(color: Colors.white),
+            foregroundColor: Colors.white,
+          ),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                const SizedBox(height: 20),
+                CircleAvatar(
+                  radius: 55,
+                  backgroundColor: Colors.indigo.withOpacity(0.1),
+                  child: const CircleAvatar(
+                    radius: 50,
+                    backgroundImage: AssetImage('assets/images/default_avatar.png'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  data["name"] ?? 'No Name',
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  data["designation"] ?? 'User',
+                  style: const TextStyle(color: Colors.grey),
+                ),
+                const SizedBox(height: 30),
+
+                _buildInfoCard(
+                  title: 'Personal Information',
+                  items: [
+                    {
+                      'icon': Icons.email,
+                      'label': 'Email',
+                      'value': data["email"] ?? user.email ?? 'No Email'
+                    },
+                    {
+                      'icon': Icons.phone,
+                      'label': 'Phone',
+                      'value': data["phone"] ?? 'No Phone'
+                    },
+                  ],
+                ),
+
+                const SizedBox(height: 20),
+
+                _buildInfoCard(
+                  title: 'Company Details',
+                  items: [
+                    {
+                      'icon': Icons.business,
+                      'label': 'Company Name',
+                      'value': data["company"] ?? 'No Company' // Fixed field name
+                    },
+                    {
+                      'icon': Icons.location_on,
+                      'label': 'Address',
+                      'value': data["address"] ?? 'No Address'
+                    },
+                    {
+                      'icon': Icons.qr_code,
+                      'label': 'GSTIN',
+                      'value': data["gstin"] ?? 'No GSTIN'
+                    },
+                  ],
+                ),
+
+                const SizedBox(height: 30),
+
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const EditProfileScreen(),
+                        ),
+                      );
+                      // Refresh the screen if profile was updated
+                      if (result == true) {
+                        setState(() {});
+                      }
+                    },
+                    icon: const Icon(Icons.edit, color: Colors.white),
+                    label: const Text(
+                      'Edit Profile',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.indigo,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, IconData icon,
-      {String? prefix, TextInputType keyboard = TextInputType.text, int? maxLength}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: TextFormField(
-        controller: controller,
-        keyboardType: keyboard,
-        maxLength: maxLength,
-        decoration: InputDecoration(
-          labelText: label,
-          prefixText: prefix,
-          border: const OutlineInputBorder(),
-          prefixIcon: Icon(icon),
-        ),
-        validator: (value) {
-          if (value == null || value.isEmpty) return 'Please enter $label';
-          return null;
-        },
+  Widget _buildInfoCard({
+    required String title,
+    required List<Map<String, dynamic>> items,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.15),
+            blurRadius: 10,
+            offset: const Offset(0, 6),
+          )
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...items.map((item) => ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(item['icon'], color: Colors.indigo),
+            title: Text(
+              item['label'],
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+            subtitle: Text(item['value']),
+          )),
+        ],
       ),
     );
   }
