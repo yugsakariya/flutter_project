@@ -41,9 +41,12 @@ class _ProfileState extends State<Profile> {
             ),
           );
         }
+
+        // Fix: Check if profile exists and navigate properly
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          Navigator.push(context,MaterialPageRoute(builder: (_)=>EditProfileScreen()));
+          return const EditProfileScreen(); // Return EditProfileScreen directly
         }
+
         // Fix: Correct way to access document data
         final data = snapshot.data!.docs.first.data() as Map<String, dynamic>;
 
@@ -70,16 +73,16 @@ class _ProfileState extends State<Profile> {
                   backgroundColor: Colors.indigo.withOpacity(0.1),
                   child: const CircleAvatar(
                     radius: 50,
-                    backgroundImage: AssetImage('assets/images/default_avatar.png'), // Fix: Add proper asset path
+                    backgroundImage: AssetImage('assets/images/default_avatar.png'),
                   ),
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  data["name"] ?? 'No Name', // Fix: Handle null values
+                  data["name"] ?? 'No Name',
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  data["designation"] ?? 'Flutter Developer', // Fix: Make designation dynamic
+                  data["designation"] ?? 'Flutter Developer',
                   style: const TextStyle(color: Colors.grey),
                 ),
                 const SizedBox(height: 30),
@@ -90,12 +93,12 @@ class _ProfileState extends State<Profile> {
                     {
                       'icon': Icons.email,
                       'label': 'Email',
-                      'value': data["email"] ?? user.email ?? 'No Email' // Fix: Use dynamic data
+                      'value': data["email"] ?? user.email ?? 'No Email'
                     },
                     {
                       'icon': Icons.phone,
                       'label': 'Phone',
-                      'value': data["phone"] ?? 'No Phone' // Fix: Use dynamic data
+                      'value': data["phone"] ?? 'No Phone'
                     },
                   ],
                 ),
@@ -108,17 +111,17 @@ class _ProfileState extends State<Profile> {
                     {
                       'icon': Icons.business,
                       'label': 'Company Name',
-                      'value': data["company_name"] ?? 'No Company' // Fix: Use dynamic data
+                      'value': data["company"] ?? 'No Company' // Fix: Changed from "company_name" to "company" to match EditProfileScreen
                     },
                     {
                       'icon': Icons.location_on,
                       'label': 'Address',
-                      'value': data["address"] ?? 'No Address' // Fix: Use dynamic data
+                      'value': data["address"] ?? 'No Address'
                     },
                     {
                       'icon': Icons.qr_code,
                       'label': 'GSTIN',
-                      'value': data["gstin"] ?? 'No GSTIN' // Fix: Use dynamic data
+                      'value': data["gstin"] ?? 'No GSTIN'
                     },
                   ],
                 ),
@@ -128,13 +131,19 @@ class _ProfileState extends State<Profile> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.push(
+                    onPressed: () async {
+                      // Fix: Wait for result and refresh if profile was updated
+                      final result = await Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (context) => const EditProfileScreen(),
                         ),
                       );
+
+                      // Refresh the profile data if changes were made
+                      if (result == true) {
+                        setState(() {}); // This will trigger a rebuild and refresh the data
+                      }
                     },
                     icon: const Icon(Icons.edit, color: Colors.white),
                     label: const Text(

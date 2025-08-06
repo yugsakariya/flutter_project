@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'Profile.dart'; // Import Profile screen
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -19,23 +20,37 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _gstinController = TextEditingController();
   final user = FirebaseAuth.instance.currentUser!;
   bool _newProfile = false;
-  bool _isLoading = false; // Add loading state
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _loadProfiledata(); // Load profile data when screen initializes
+    _loadProfileData();
   }
 
-  Future<void> _loadProfiledata() async {
-    final doc = await FirebaseFirestore.instance
-        .collection('profile')
-        .where('user', isEqualTo: user.uid)
-        .limit(1)
-        .get();
+  @override
+  void dispose() {
+    // Clean up controllers to prevent memory leaks
+    _nameController.dispose();
+    _phoneController.dispose();
+    _companyController.dispose();
+    _addressController.dispose();
+    _gstinController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadProfileData() async {
+    setState(() => _isLoading = true);
+
     try {
+      final doc = await FirebaseFirestore.instance
+          .collection('profile')
+          .where('user', isEqualTo: user.uid)
+          .limit(1)
+          .get();
+
       if (doc.docs.isEmpty) {
-        setState(() => _newProfile = true);
+        _newProfile = true;
       } else {
         final data = doc.docs.first.data();
         setState(() {
@@ -47,26 +62,34 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         });
       }
     } catch (e) {
-      print(e);
+      print('Error loading profile data: $e');
+      if (mounted) {
+        Fluttertoast.showToast(msg: "Error loading profile data");
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isLoading = true);
 
     try {
       if (_newProfile) {
-        // Add the 'user' field for new profiles
+        // Add new profile
         await FirebaseFirestore.instance.collection("profile").add({
-          'user': user.uid, // This was missing!
-          'name': _nameController.text,
-          'phone': _phoneController.text,
-          'company': _companyController.text,
-          'address': _addressController.text,
-          'gstin': _gstinController.text,
-          'email': user.email, // Add user email as well
+          'user': user.uid,
+          'name': _nameController.text.trim(),
+          'phone': _phoneController.text.trim(),
+          'company': _companyController.text.trim(),
+          'address': _addressController.text.trim(),
+          'gstin': _gstinController.text.trim(),
+          'email': user.email,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
         });
       } else {
         // Update existing profile
@@ -78,22 +101,39 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
         if (docs.docs.isNotEmpty) {
           await docs.docs.first.reference.update({
-            'name': _nameController.text,
-            'phone': _phoneController.text,
-            'company': _companyController.text,
-            'address': _addressController.text,
-            'gstin': _gstinController.text,
+            'name': _nameController.text.trim(),
+            'phone': _phoneController.text.trim(),
+            'company': _companyController.text.trim(),
+            'address': _addressController.text.trim(),
+            'gstin': _gstinController.text.trim(),
+            'updatedAt': FieldValue.serverTimestamp(),
           });
         }
       }
 
-      Fluttertoast.showToast(msg: "Profile Updated Successfully");
-      Navigator.pop(context, true); // Pass true to indicate successful save
+      if (mounted) {
+        Fluttertoast.showToast(msg: "Profile updated successfully");
+
+        if (_newProfile) {
+          // For new profile, replace current screen with Profile screen
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const Profile()),
+          );
+        } else {
+          // For existing profile update, go back with success indicator
+          Navigator.pop(context, true);
+        }
+      }
     } catch (e) {
-      Fluttertoast.showToast(msg: "Error saving profile: $e");
-      print(e);
+      print('Error saving profile: $e');
+      if (mounted) {
+        Fluttertoast.showToast(msg: "Error saving profile: $e");
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -101,7 +141,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Edit Profile'),
+        title: Text(_newProfile ? 'Create Profile' : 'Edit Profile'), // Dynamic title
         titleTextStyle: const TextStyle(
           fontSize: 22,
           color: Colors.white,
@@ -110,8 +150,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         backgroundColor: Colors.indigo,
         iconTheme: const IconThemeData(color: Colors.white),
         foregroundColor: Colors.white,
+        // Hide back button for new profile creation
+        automaticallyImplyLeading: !_newProfile,
       ),
-      body: Padding(
+      body: _isLoading
+          ? const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.indigo),
+        ),
+      )
+          : Padding(
         padding: const EdgeInsets.all(20),
         child: Form(
           key: _formKey,
@@ -129,8 +177,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               const SizedBox(height: 20),
 
               _buildTextField(_nameController, "Name", Icons.person),
-              _buildTextField(_phoneController, "Phone", Icons.phone,
-                  prefix: "+91 ", keyboard: TextInputType.phone, maxLength: 10),
+              _buildTextField(
+                  _phoneController,
+                  "Phone",
+                  Icons.phone,
+                  prefix: "+91 ",
+                  keyboard: TextInputType.phone,
+                  maxLength: 10
+              ),
               _buildTextField(_companyController, "Company Name", Icons.business),
               _buildTextField(_addressController, "Company Address", Icons.location_on),
               _buildTextField(_gstinController, "GSTIN", Icons.qr_code),
@@ -140,7 +194,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _saveProfile, // Disable when loading
+                  onPressed: _isLoading ? null : _saveProfile,
                   icon: _isLoading
                       ? const SizedBox(
                     width: 20,
@@ -171,8 +225,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, IconData icon,
-      {String? prefix, TextInputType keyboard = TextInputType.text, int? maxLength}) {
+  Widget _buildTextField(
+      TextEditingController controller,
+      String label,
+      IconData icon, {
+        String? prefix,
+        TextInputType keyboard = TextInputType.text,
+        int? maxLength
+      }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),
       child: TextFormField(
@@ -184,9 +244,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           prefixText: prefix,
           border: const OutlineInputBorder(),
           prefixIcon: Icon(icon),
+          counterText: maxLength != null ? "" : null, // Hide counter for phone field
         ),
         validator: (value) {
-          if (value == null || value.isEmpty) return 'Please enter $label';
+          if (value == null || value.trim().isEmpty) {
+            return 'Please enter $label';
+          }
+
+          // Additional validation for phone number
+          if (label == "Phone" && value.trim().length != 10) {
+            return 'Please enter a valid 10-digit phone number';
+          }
+
           return null;
         },
       ),
