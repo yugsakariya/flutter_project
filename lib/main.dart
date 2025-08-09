@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter_project/Billing.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter_project/Dashboard.dart';
@@ -11,6 +10,9 @@ import 'package:flutter_project/login.dart';
 import 'package:flutter_project/splash_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
+import 'BillScreen.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -151,7 +153,7 @@ class _MyAppState extends State<MyApp> {
       Dashboard(onTabChange: (int idx) => setState(() => _selectedIndex = idx)),
       StockScreen(goToDashboard: _goToDashboard),
       TransactionScreen(goToDashboard: _goToDashboard),
-      NewBillScreen(goToDashboard: _goToDashboard),
+      BillsScreen(goToDashboard: _goToDashboard),
     ];
 
     return Scaffold(
