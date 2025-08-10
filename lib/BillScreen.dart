@@ -1,8 +1,14 @@
+import 'dart:io';
+import 'package:device_info_plus/device_info_plus.dart';
+
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:open_file/open_file.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'AddBill.dart';
+import 'EditBill.dart';
 import 'pdf_generator.dart';
 
 class BillsScreen extends StatefulWidget {
@@ -167,7 +173,6 @@ class _BillsScreenState extends State<BillsScreen> {
 
   void _showBillActions(BuildContext context, DocumentSnapshot bill) {
     final data = bill.data() as Map<String, dynamic>;
-
     showModalBottomSheet(
       context: context,
       builder: (context) => Container(
@@ -187,7 +192,7 @@ class _BillsScreenState extends State<BillsScreen> {
               leading: Icon(Icons.edit),
               title: Text('Edit Bill'),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => EditBillScreen(billNumber: data['billNumber'])));
                 // You can implement edit functionality here
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Edit functionality to be implemented')),
@@ -208,8 +213,105 @@ class _BillsScreenState extends State<BillsScreen> {
     );
   }
 
-  Future<void> _generatePDF(Map<String, dynamic> billData) async {
+  // Check and request storage permission
+// Check and request storage permission
+  Future<bool> _checkAndRequestStoragePermission() async {
+    // For different Android versions, we need to handle permissions differently
+    Permission permission;
+
+    if (Platform.isAndroid) {
+      final deviceInfo = await DeviceInfoPlugin().androidInfo;
+      if (deviceInfo.version.sdkInt >= 30) {
+        // Android 11 and above
+        permission = Permission.manageExternalStorage;
+      } else {
+        // Android 10 and below
+        permission = Permission.storage;
+      }
+    } else {
+      permission = Permission.storage;
+    }
+
+    PermissionStatus status = await permission.status;
+
+    print('Current permission status: $status'); // Debug print
+
+    if (status.isGranted) {
+      return true;
+    }
+
+    if (status.isDenied || status.isLimited) {
+      // Request permission
+      PermissionStatus result = await permission.request();
+      print('Permission request result: $result'); // Debug print
+      return result.isGranted;
+    }
+
+    if (status.isPermanentlyDenied) {
+      // Show dialog to open app settings
+      _showPermissionDialog();
+      return false;
+    }
+
+    // If status is restricted or other
+    PermissionStatus result = await permission.request();
+    return result.isGranted;
+  }
+
+  // Show dialog when permission is permanently denied
+  void _showPermissionDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Prevent dismissing by tapping outside
+      builder: (context) => AlertDialog(
+        title: Text('Storage Permission Required'),
+        content: Text(
+          'This app needs storage permission to save PDF files. Please grant the permission in app settings to continue.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await openAppSettings();
+              // Check permission again after returning from settings
+              Future.delayed(Duration(milliseconds: 500), () async {
+                bool hasPermission = await _checkAndRequestStoragePermission();
+                if (hasPermission) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Permission granted! You can now generate PDFs.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              });
+            },
+            child: Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future _generatePDF(Map<String, dynamic> billData) async {
     try {
+      // Check storage permission first
+      bool hasPermission = await _checkAndRequestStoragePermission();
+
+      if (!hasPermission) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Storage permission is required to save PDF files'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -218,7 +320,6 @@ class _BillsScreenState extends State<BillsScreen> {
 
       // Generate PDF and get result with file path
       final pdfResult = await PDFGenerator.generateGSTVoucher(billData: billData);
-
       Navigator.pop(context); // Close loading dialog
 
       if (pdfResult['success']) {
@@ -233,7 +334,6 @@ class _BillsScreenState extends State<BillsScreen> {
 
         // Directly open the PDF without dialog
         await _openPDFDirectly(pdfResult['localPath']);
-
       } else {
         // Show error message
         ScaffoldMessenger.of(context).showSnackBar(
@@ -243,7 +343,6 @@ class _BillsScreenState extends State<BillsScreen> {
           ),
         );
       }
-
     } catch (e) {
       Navigator.pop(context); // Close loading dialog
       ScaffoldMessenger.of(context).showSnackBar(
@@ -255,11 +354,10 @@ class _BillsScreenState extends State<BillsScreen> {
     }
   }
 
-// Updated method to directly open PDF
-  Future<void> _openPDFDirectly(String filePath) async {
+  // Updated method to directly open PDF
+  Future _openPDFDirectly(String filePath) async {
     try {
       final result = await OpenFile.open(filePath);
-
       if (result.type != ResultType.done) {
         // If opening failed, show user a brief message
         ScaffoldMessenger.of(context).showSnackBar(
@@ -281,11 +379,10 @@ class _BillsScreenState extends State<BillsScreen> {
     }
   }
 
-// Add this method to handle PDF opening
-  Future<void> _openPDF(String filePath) async {
+  // Add this method to handle PDF opening
+  Future _openPDF(String filePath) async {
     try {
       final result = await OpenFile.open(filePath);
-
       if (result.type != ResultType.done) {
         // If opening failed, show user a message
         ScaffoldMessenger.of(context).showSnackBar(
@@ -308,8 +405,6 @@ class _BillsScreenState extends State<BillsScreen> {
       );
     }
   }
-
-
 
   void _deleteBill(BuildContext context, DocumentSnapshot bill) {
     showDialog(

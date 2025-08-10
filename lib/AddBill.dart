@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:fluttertoast/fluttertoast.dart'; // Add this import
 
 class NewBillScreen extends StatefulWidget {
   const NewBillScreen({super.key});
@@ -14,21 +15,24 @@ class _NewBillScreenState extends State<NewBillScreen> {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController billNumberController = TextEditingController();
-  DateTime selectedDate = DateTime.now();
-  List<Map<String, dynamic>> items = [];
-  int quantity = 1;
-  String formatDate(DateTime date) => DateFormat.yMMMd().format(date);
-  final price = TextEditingController();
-  final user = FirebaseAuth.instance.currentUser;
-  String? pendingBillNumber; // Store the bill number without committing
 
-  Future<void> pickDate() async {
+  DateTime selectedDate = DateTime.now();
+  List<Map<String, String>> items = []; // Fixed: Added proper generic type
+  int quantity = 1;
+
+  final user = FirebaseAuth.instance.currentUser;
+  String? pendingBillNumber;
+
+  String formatDate(DateTime date) => DateFormat.yMMMd().format(date);
+
+  Future<void> pickDate() async { // Fixed: Added return type
     DateTime? picked = await showDatePicker(
       context: context,
       initialDate: selectedDate,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
     );
+
     if (picked != null) {
       setState(() {
         selectedDate = picked;
@@ -65,6 +69,10 @@ class _NewBillScreenState extends State<NewBillScreen> {
                     final doc = snapshot.data!.docs[index];
                     final data = doc.data() as Map<String, dynamic>;
 
+                    // Create a separate controller for each product
+                    final TextEditingController productPriceController = TextEditingController();
+                    int productQuantity = 1;
+
                     return StatefulBuilder(
                       builder: (context, setDialogState) {
                         return Card(
@@ -83,19 +91,19 @@ class _NewBillScreenState extends State<NewBillScreen> {
                                     const Text('Quantity: '),
                                     IconButton(
                                       onPressed: () {
-                                        if (quantity > 1) {
+                                        if (productQuantity > 1) {
                                           setDialogState(() {
-                                            quantity--;
+                                            productQuantity--;
                                           });
                                         }
                                       },
                                       icon: const Icon(Icons.remove),
                                     ),
-                                    Text(quantity.toString()),
+                                    Text(productQuantity.toString()),
                                     IconButton(
                                       onPressed: () {
                                         setDialogState(() {
-                                          quantity++;
+                                          productQuantity++;
                                         });
                                       },
                                       icon: const Icon(Icons.add),
@@ -103,26 +111,25 @@ class _NewBillScreenState extends State<NewBillScreen> {
                                   ],
                                 ),
                                 TextField(
-                                  controller: price,
+                                  controller: productPriceController, // Use the product-specific controller
                                   decoration: const InputDecoration(
                                     labelText: 'Price',
-                                    prefixText: '\$',
+                                    prefixText: '\Rs.',
                                   ),
                                   keyboardType: TextInputType.number,
                                 ),
                                 const SizedBox(height: 8),
                                 ElevatedButton(
                                   onPressed: () {
-                                    if (price.text.isNotEmpty) {
+                                    if (productPriceController.text.isNotEmpty) {
                                       setState(() {
                                         items.add({
                                           'name': data['product'] ?? 'Unknown',
-                                          'quantity': quantity.toString(),
-                                          'price': price.text,
+                                          'quantity': productQuantity.toString(),
+                                          'price': productPriceController.text,
                                         });
                                       });
-                                      price.clear();
-                                      quantity = 1;
+                                      productPriceController.dispose(); // Clean up the controller
                                       Navigator.of(context).pop();
                                     }
                                   },
@@ -218,8 +225,8 @@ class _NewBillScreenState extends State<NewBillScreen> {
   double calculateSubtotal() {
     double subtotal = 0.0;
     for (var item in items) {
-      final quantity = int.tryParse(item['quantity']) ?? 0;
-      final price = double.tryParse(item['price']) ?? 0.0;
+      final quantity = int.tryParse(item['quantity'] ?? '0') ?? 0;
+      final price = double.tryParse(item['price'] ?? '0') ?? 0.0;
       subtotal += quantity * price;
     }
     return subtotal;
@@ -228,8 +235,13 @@ class _NewBillScreenState extends State<NewBillScreen> {
   // Save bill function that increments the counter
   Future<void> saveBill() async {
     if (nameController.text.isEmpty || items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please add customer name and items')),
+      // Changed to Fluttertoast
+      Fluttertoast.showToast(
+        msg: 'Please add customer name and items',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.orange,
+        textColor: Colors.white,
       );
       return;
     }
@@ -257,16 +269,24 @@ class _NewBillScreenState extends State<NewBillScreen> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Bill $finalBillNumber saved successfully!')),
+      // Changed to Fluttertoast
+      Fluttertoast.showToast(
+        msg: 'Bill $finalBillNumber saved successfully!',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.green,
+        textColor: Colors.white,
       );
-
       // Clear form and navigate back or reset
       Navigator.of(context).pop();
-
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving bill: $e')),
+      // Changed to Fluttertoast
+      Fluttertoast.showToast(
+        msg: 'Error saving bill: $e',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
       );
     }
   }
@@ -339,9 +359,9 @@ class _NewBillScreenState extends State<NewBillScreen> {
                 ? const Text("No items added yet")
                 : Column(
               children: items.map((item) => ListTile(
-                title: Text(item['name']),
-                subtitle: Text('Quantity: ${item['quantity']}'),
-                trailing: Text('\$${item['price']}'),
+                title: Text(item['name'] ?? 'Unknown'),
+                subtitle: Text('Quantity: ${item['quantity'] ?? '0'}'),
+                trailing: Text('\Rs.${item['price'] ?? '0'}'),
                 leading: IconButton(
                   icon: const Icon(Icons.delete),
                   onPressed: () {
@@ -359,26 +379,26 @@ class _NewBillScreenState extends State<NewBillScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text("Subtotal:"),
-                Text("\$${subtotal.toStringAsFixed(2)}"),
+                Text("\Rs.${subtotal.toStringAsFixed(2)}"),
               ],
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text("Tax (10%):"),
-                Text("\$${tax.toStringAsFixed(2)}"),
+                Text("\Rs.${tax.toStringAsFixed(2)}"),
               ],
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text("Total:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text("\$${total.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text("\Rs.${total.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 20),
             ElevatedButton(
-              onPressed: saveBill, // Use the new saveBill function
+              onPressed: saveBill,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
                 foregroundColor: Colors.white,
@@ -398,7 +418,6 @@ class _NewBillScreenState extends State<NewBillScreen> {
     nameController.dispose();
     phoneController.dispose();
     billNumberController.dispose();
-    price.dispose();
     super.dispose();
   }
 }

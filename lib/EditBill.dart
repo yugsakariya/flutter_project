@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 
 class EditBillScreen extends StatefulWidget {
   final String billNumber;
@@ -16,12 +17,12 @@ class _EditBillScreenState extends State<EditBillScreen> {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController billNumberController = TextEditingController();
-  DateTime selectedDate = DateTime.now();
-  List<Map<String, dynamic>> items = [];
-  int quantity = 1;
-  final price = TextEditingController();
-  final user = FirebaseAuth.instance.currentUser;
 
+  DateTime selectedDate = DateTime.now();
+  List<Map<String, String>> items = []; // Fixed: Added proper generic type
+  int quantity = 1;
+
+  final user = FirebaseAuth.instance.currentUser;
   bool isLoading = true;
   String? billDocumentId;
 
@@ -49,15 +50,21 @@ class _EditBillScreenState extends State<EditBillScreen> {
           phoneController.text = data['customerPhone'] ?? '';
           billNumberController.text = data['billNumber'] ?? '';
           selectedDate = (data['date'] as Timestamp?)?.toDate() ?? DateTime.now();
-          items = List<Map<String, dynamic>>.from(data['items'] ?? []);
+          items = List<Map<String, String>>.from(
+              (data['items'] as List?)?.map((item) => Map<String, String>.from(item)) ?? []
+          );
           isLoading = false;
         });
       } else {
         setState(() {
           isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Bill not found')),
+        Fluttertoast.showToast(
+          msg: 'Bill not found',
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+          backgroundColor: Colors.red,
+          textColor: Colors.white,
         );
         Navigator.pop(context);
       }
@@ -65,8 +72,12 @@ class _EditBillScreenState extends State<EditBillScreen> {
       setState(() {
         isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading bill: $e')),
+      Fluttertoast.showToast(
+        msg: 'Error loading bill: Rs.e',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
       );
       Navigator.pop(context);
     }
@@ -79,6 +90,7 @@ class _EditBillScreenState extends State<EditBillScreen> {
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
     );
+
     if (picked != null) {
       setState(() {
         selectedDate = picked;
@@ -115,6 +127,10 @@ class _EditBillScreenState extends State<EditBillScreen> {
                     final doc = snapshot.data!.docs[index];
                     final data = doc.data() as Map<String, dynamic>;
 
+                    // Create a separate controller for each product
+                    final TextEditingController productPriceController = TextEditingController();
+                    int productQuantity = 1;
+
                     return StatefulBuilder(
                       builder: (context, setDialogState) {
                         return Card(
@@ -133,19 +149,19 @@ class _EditBillScreenState extends State<EditBillScreen> {
                                     const Text('Quantity: '),
                                     IconButton(
                                       onPressed: () {
-                                        if (quantity > 1) {
+                                        if (productQuantity > 1) {
                                           setDialogState(() {
-                                            quantity--;
+                                            productQuantity--;
                                           });
                                         }
                                       },
                                       icon: const Icon(Icons.remove),
                                     ),
-                                    Text(quantity.toString()),
+                                    Text(productQuantity.toString()),
                                     IconButton(
                                       onPressed: () {
                                         setDialogState(() {
-                                          quantity++;
+                                          productQuantity++;
                                         });
                                       },
                                       icon: const Icon(Icons.add),
@@ -153,26 +169,25 @@ class _EditBillScreenState extends State<EditBillScreen> {
                                   ],
                                 ),
                                 TextField(
-                                  controller: price,
+                                  controller: productPriceController,
                                   decoration: const InputDecoration(
                                     labelText: 'Price',
-                                    prefixText: '\$',
+                                    prefixText: '\Rs.',
                                   ),
                                   keyboardType: TextInputType.number,
                                 ),
                                 const SizedBox(height: 8),
                                 ElevatedButton(
                                   onPressed: () {
-                                    if (price.text.isNotEmpty) {
+                                    if (productPriceController.text.isNotEmpty) {
                                       setState(() {
                                         items.add({
                                           'name': data['product'] ?? 'Unknown',
-                                          'quantity': quantity.toString(),
-                                          'price': price.text,
+                                          'quantity': productQuantity.toString(),
+                                          'price': productPriceController.text,
                                         });
                                       });
-                                      price.clear();
-                                      quantity = 1;
+                                      productPriceController.dispose();
                                       Navigator.of(context).pop();
                                     }
                                   },
@@ -203,13 +218,13 @@ class _EditBillScreenState extends State<EditBillScreen> {
   void editItem(int index) {
     final item = items[index];
     final editPriceController = TextEditingController(text: item['price']);
-    int editQuantity = int.tryParse(item['quantity']) ?? 1;
+    int editQuantity = int.tryParse(item['quantity'] ?? '1') ?? 1;
 
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Edit ${item['name']}'),
+          title: Text('Edit Rs.${item['name']}'),
           content: StatefulBuilder(
             builder: (context, setDialogState) {
               return Column(
@@ -243,7 +258,7 @@ class _EditBillScreenState extends State<EditBillScreen> {
                     controller: editPriceController,
                     decoration: const InputDecoration(
                       labelText: 'Price',
-                      prefixText: '\$',
+                      prefixText: '\Rs.',
                     ),
                     keyboardType: TextInputType.number,
                   ),
@@ -253,7 +268,10 @@ class _EditBillScreenState extends State<EditBillScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                editPriceController.dispose();
+                Navigator.of(context).pop();
+              },
               child: const Text('Cancel'),
             ),
             ElevatedButton(
@@ -261,11 +279,12 @@ class _EditBillScreenState extends State<EditBillScreen> {
                 if (editPriceController.text.isNotEmpty) {
                   setState(() {
                     items[index] = {
-                      'name': item['name'],
+                      'name': item['name'] ?? 'Unknown',
                       'quantity': editQuantity.toString(),
                       'price': editPriceController.text,
                     };
                   });
+                  editPriceController.dispose();
                   Navigator.of(context).pop();
                 }
               },
@@ -280,8 +299,8 @@ class _EditBillScreenState extends State<EditBillScreen> {
   double calculateSubtotal() {
     double subtotal = 0.0;
     for (var item in items) {
-      final quantity = int.tryParse(item['quantity']) ?? 0;
-      final price = double.tryParse(item['price']) ?? 0.0;
+      final quantity = int.tryParse(item['quantity'] ?? '0') ?? 0;
+      final price = double.tryParse(item['price'] ?? '0') ?? 0.0;
       subtotal += quantity * price;
     }
     return subtotal;
@@ -289,15 +308,23 @@ class _EditBillScreenState extends State<EditBillScreen> {
 
   Future<void> updateBill() async {
     if (nameController.text.isEmpty || items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please add customer name and items')),
+      Fluttertoast.showToast(
+        msg: 'Please add customer name and items',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.orange,
+        textColor: Colors.white,
       );
       return;
     }
 
     if (billDocumentId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bill document not found')),
+      Fluttertoast.showToast(
+        msg: 'Bill document not found',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
       );
       return;
     }
@@ -323,15 +350,21 @@ class _EditBillScreenState extends State<EditBillScreen> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Bill ${widget.billNumber} updated successfully!')),
+      Fluttertoast.showToast(
+        msg: 'Bill Rs.{widget.billNumber} updated successfully!',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.green,
+        textColor: Colors.white,
       );
-
       Navigator.of(context).pop();
-
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating bill: $e')),
+      Fluttertoast.showToast(
+        msg: 'Error updating bill: Rs.e',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
       );
     }
   }
@@ -358,7 +391,7 @@ class _EditBillScreenState extends State<EditBillScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Edit Bill - ${widget.billNumber}'),
+        title: Text('Edit Bill - Rs.{widget.billNumber}'),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 1,
@@ -419,14 +452,14 @@ class _EditBillScreenState extends State<EditBillScreen> {
                 : Column(
               children: items.asMap().entries.map((entry) {
                 int index = entry.key;
-                Map<String, dynamic> item = entry.value;
+                Map<String, String> item = entry.value;
                 return ListTile(
-                  title: Text(item['name']),
-                  subtitle: Text('Quantity: ${item['quantity']}'),
+                  title: Text(item['name'] ?? 'Unknown'),
+                  subtitle: Text('Quantity: Rs.${item['quantity'] ?? '0'}'),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('\$${item['price']}'),
+                      Text('Rs.${item['price'] ?? '0'}'),
                       IconButton(
                         icon: const Icon(Icons.edit),
                         onPressed: () => editItem(index),
@@ -451,21 +484,21 @@ class _EditBillScreenState extends State<EditBillScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text("Subtotal:"),
-                Text("\$${subtotal.toStringAsFixed(2)}"),
+                Text("Rs.${subtotal.toStringAsFixed(2)}"),
               ],
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text("Tax (10%):"),
-                Text("\$${tax.toStringAsFixed(2)}"),
+                Text("Rs.${tax.toStringAsFixed(2)}"),
               ],
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text("Total:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text("\$${total.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text("Rs.${total.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 20),
@@ -490,7 +523,6 @@ class _EditBillScreenState extends State<EditBillScreen> {
     nameController.dispose();
     phoneController.dispose();
     billNumberController.dispose();
-    price.dispose();
     super.dispose();
   }
 }

@@ -46,6 +46,8 @@ dependencies:
   permission_handler: ^11.0.1
   open_file: ^3.3.2
   file_saver: ^0.2.9
+  device_info_plus: ^10.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -67,11 +69,11 @@ flutter_icons:
   image_path: "assets/logo.png"
   adaptive_icon_foreground: "assets/logo_adaptive.png"
   adaptive_icon_background: "#ffffff"
-  min_sdk_android: 35
-flutter_native_splash:
-  color: "#ffffff"
-  image: assets/logo_adaptive.png
-  web: false
+  min_sdk_android: 21
+#flutter_native_splash:
+#  color: "#ffffff"
+#  image: assets/logo_adaptive.png
+#  web: false
 
 # The following section is specific to Flutter packages.
 flutter:

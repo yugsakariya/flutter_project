@@ -13,14 +13,17 @@ class PDFGenerator {
   static final user = FirebaseAuth.instance.currentUser;
 
   // Fetch company info from Firestore profile collection
-  static Future<Map<String, dynamic>> _getCompanyInfo() async {
+  static Future<Map<String, String>> _getCompanyInfo() async {
     try {
-      final doc = await FirebaseFirestore.instance
+      // Query documents where 'user' field equals current user's UID
+      final querySnapshot = await FirebaseFirestore.instance
           .collection('profile')
-          .doc(user?.uid)
+          .where('user', isEqualTo: user?.uid)
+          .limit(1) // Get only the first matching document
           .get();
 
-      if (doc.exists) {
+      if (querySnapshot.docs.isNotEmpty) {
+        final doc = querySnapshot.docs.first;
         final data = doc.data() as Map<String, dynamic>;
         return {
           'companyName': data['company'] ?? 'VINAYAK TRADERS',
@@ -32,6 +35,8 @@ class PDFGenerator {
     } catch (e) {
       print('Error fetching company info: $e');
     }
+
+    // Return default values if no document found or error occurred
     return {
       'companyName': 'VINAYAK TRADERS',
       'address': 'A-151, NEW SARDAR MARKET YARD, NATIONAL\nGONDAL - 360311, Mo.: 9605310450',
@@ -72,11 +77,11 @@ class PDFGenerator {
       } catch (e) {
         print('Error accessing Downloads folder: $e');
       }
-    }
 
-    // Final fallback to documents directory
-    final directory = await getApplicationDocumentsDirectory();
-    return directory.path;
+      // Final fallback to documents directory
+      final directory = await getApplicationDocumentsDirectory();
+      return directory.path;
+    }
   }
 
   // Request storage permissions for Android
@@ -129,7 +134,7 @@ class PDFGenerator {
                 pw.SizedBox(height: 15),
                 _buildItemsTable(billData),
                 pw.SizedBox(height: 15),
-                _buildTotalsSection(billData),
+                _buildTotalsSection(billData, companyInfo), // Pass companyInfo
                 pw.SizedBox(height: 20),
                 _buildFooter(companyInfo),
               ],
@@ -152,7 +157,6 @@ class PDFGenerator {
       await file.writeAsBytes(pdfBytes);
 
       print('PDF saved to Downloads folder: ${file.path}');
-
       return {
         'success': true,
         'downloadStatus': 'PDF saved to Downloads folder successfully',
@@ -160,7 +164,6 @@ class PDFGenerator {
         'fileName': fileName,
         'actualLocation': file.path,
       };
-
     } catch (e) {
       print('PDF generation error: $e');
       return {
@@ -171,7 +174,7 @@ class PDFGenerator {
   }
 
   // Build PDF header section
-  static pw.Widget _buildHeader(Map<String, dynamic> companyInfo) {
+  static pw.Widget _buildHeader(Map<String, String> companyInfo) {
     return pw.Container(
       width: double.infinity,
       decoration: pw.BoxDecoration(
@@ -211,8 +214,8 @@ class PDFGenerator {
     );
   }
 
-  // Build bill information section
-  static pw.Widget _buildBillInfo(Map<String, dynamic> billData, Map<String, dynamic> companyInfo) {
+  // Build bill information section (removed village line)
+  static pw.Widget _buildBillInfo(Map<String, dynamic> billData, Map<String, String> companyInfo) {
     return pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
       children: [
@@ -228,7 +231,7 @@ class PDFGenerator {
           children: [
             pw.Text('Voucher No.: ${billData['billNumber'] ?? 'N/A'}', style: const pw.TextStyle(fontSize: 10)),
             pw.Text('Voucher Date: ${_formatDate(billData['date'])}', style: const pw.TextStyle(fontSize: 10)),
-            pw.Text('Village: DHANDHUSAR', style: const pw.TextStyle(fontSize: 10)),
+            // Removed: pw.Text('Village: DHANDHUSAR', style: const pw.TextStyle(fontSize: 10)),
           ],
         ),
       ],
@@ -237,7 +240,7 @@ class PDFGenerator {
 
   // Build items table
   static pw.Widget _buildItemsTable(Map<String, dynamic> billData) {
-    final items = billData['items'] as List<dynamic>? ?? [];
+    final items = billData['items'] as List? ?? [];
 
     return pw.Table(
       border: pw.TableBorder.all(),
@@ -298,8 +301,8 @@ class PDFGenerator {
     );
   }
 
-  // Build totals section
-  static pw.Widget _buildTotalsSection(Map<String, dynamic> billData) {
+  // Build totals section (now uses company name from profile in signature)
+  static pw.Widget _buildTotalsSection(Map<String, dynamic> billData, Map<String, String> companyInfo) {
     final subtotal = (billData['subtotal'] as num?)?.toDouble() ?? 0.0;
     final tax = (billData['tax'] as num?)?.toDouble() ?? 0.0;
     final total = (billData['total'] as num?)?.toDouble() ?? 0.0;
@@ -376,7 +379,8 @@ class PDFGenerator {
               child: pw.Column(
                 mainAxisAlignment: pw.MainAxisAlignment.center,
                 children: [
-                  pw.Text('VINAYAK TRADERS',
+                  // Use company name from profile data instead of hardcoded "VINAYAK TRADERS"
+                  pw.Text(companyInfo['companyName'] ?? 'VINAYAK TRADERS',
                       style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
                   pw.SizedBox(height: 20),
                   pw.Text('(Authorised Signature)', style: const pw.TextStyle(fontSize: 8)),
@@ -390,7 +394,7 @@ class PDFGenerator {
   }
 
   // Build footer section
-  static pw.Widget _buildFooter(Map<String, dynamic> companyInfo) {
+  static pw.Widget _buildFooter(Map<String, String> companyInfo) {
     return pw.Container(
       width: double.infinity,
       padding: const pw.EdgeInsets.symmetric(vertical: 8),
