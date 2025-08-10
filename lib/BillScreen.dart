@@ -1,18 +1,19 @@
 import 'dart:io';
+
 import 'package:device_info_plus/device_info_plus.dart';
-
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:open_file/open_file.dart';
 import 'package:permission_handler/permission_handler.dart';
+
 import 'AddBill.dart';
 import 'EditBill.dart';
 import 'pdf_generator.dart';
 
 class BillsScreen extends StatefulWidget {
   final VoidCallback? goToDashboard;
+
   const BillsScreen({super.key, this.goToDashboard});
 
   @override
@@ -25,94 +26,113 @@ class _BillsScreenState extends State<BillsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Bills'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-      ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _firestore.collection('bills').where('user', isEqualTo: user?.uid).snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                'Error: ${snapshot.error}',
-                style: TextStyle(color: Colors.red),
-              ),
-            );
-          }
-
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
-          }
-
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.receipt_long, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text(
-                    'No bills found',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return ListView.builder(
-            padding: EdgeInsets.all(16),
-            itemCount: snapshot.data!.docs.length,
-            itemBuilder: (context, index) {
-              DocumentSnapshot bill = snapshot.data!.docs[index];
-              Map<String, dynamic> data = bill.data() as Map<String, dynamic>;
-
-              return Card(
-                elevation: 4,
-                margin: EdgeInsets.only(bottom: 16),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.blue,
-                    child: Icon(Icons.receipt, color: Colors.white),
-                  ),
-                  title: Text(
-                    data['billNumber'] ?? 'Untitled Bill',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(height: 4),
-                      Text('Customer: ${data['customerName'] ?? 'Unknown'}'),
-                      Text('Total: ₹${data['total']?.toStringAsFixed(2) ?? '0.00'}'),
-                      if (data['date'] != null)
-                        Text(
-                          'Date: ${_formatDate(data['date'])}',
-                          style: TextStyle(color: Colors.grey[500], fontSize: 12),
-                        ),
-                    ],
-                  ),
-                  trailing: IconButton(
-                    icon: Icon(Icons.more_vert),
-                    onPressed: () => _showBillActions(context, bill),
-                  ),
-                  onTap: () => _showBillDetails(context, data),
+    return WillPopScope(
+      onWillPop: () async {
+        if (widget.goToDashboard != null) {
+          widget.goToDashboard!();
+          return false; // Prevent default back navigation
+        }
+        return true; // Allow default back navigation
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('Bills'),
+          backgroundColor: Colors.blue,
+          foregroundColor: Colors.white,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back),
+            onPressed: () {
+              if (widget.goToDashboard != null) {
+                widget.goToDashboard!();
+              } else {
+                Navigator.pop(context);
+              }
+            },
+          ),
+        ),
+        body: StreamBuilder<QuerySnapshot>(
+          stream: _firestore.collection('bills').where('user', isEqualTo: user?.uid).snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Error: ${snapshot.error}',
+                  style: TextStyle(color: Colors.red),
                 ),
               );
-            },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => NewBillScreen())
+            }
+
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Center(child: CircularProgressIndicator());
+            }
+
+            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.receipt_long, size: 64, color: Colors.grey),
+                    SizedBox(height: 16),
+                    Text(
+                      'No bills found',
+                      style: TextStyle(fontSize: 18, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return ListView.builder(
+              padding: EdgeInsets.all(16),
+              itemCount: snapshot.data!.docs.length,
+              itemBuilder: (context, index) {
+                DocumentSnapshot bill = snapshot.data!.docs[index];
+                Map<String, dynamic> data = bill.data() as Map<String, dynamic>;
+
+                return Card(
+                  elevation: 4,
+                  margin: EdgeInsets.only(bottom: 16),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.blue,
+                      child: Icon(Icons.receipt, color: Colors.white),
+                    ),
+                    title: Text(
+                      data['billNumber'] ?? 'Untitled Bill',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(height: 4),
+                        Text('Customer: ${data['customerName'] ?? 'Unknown'}'),
+                        Text('Total: ₹${data['total']?.toStringAsFixed(2) ?? '0.00'}'),
+                        if (data['date'] != null)
+                          Text(
+                            'Date: ${_formatDate(data['date'])}',
+                            style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                          ),
+                      ],
+                    ),
+                    trailing: IconButton(
+                      icon: Icon(Icons.more_vert),
+                      onPressed: () => _showBillActions(context, bill),
+                    ),
+                    onTap: () => _showBillDetails(context, data),
+                  ),
+                );
+              },
+            );
+          },
         ),
-        backgroundColor: Colors.blue,
-        child: Icon(Icons.add),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => NewBillScreen())
+          ),
+          backgroundColor: Colors.blue,
+          child: Icon(Icons.add),
+        ),
       ),
     );
   }
@@ -214,11 +234,9 @@ class _BillsScreenState extends State<BillsScreen> {
   }
 
   // Check and request storage permission
-// Check and request storage permission
   Future<bool> _checkAndRequestStoragePermission() async {
     // For different Android versions, we need to handle permissions differently
     Permission permission;
-
     if (Platform.isAndroid) {
       final deviceInfo = await DeviceInfoPlugin().androidInfo;
       if (deviceInfo.version.sdkInt >= 30) {
@@ -233,7 +251,6 @@ class _BillsScreenState extends State<BillsScreen> {
     }
 
     PermissionStatus status = await permission.status;
-
     print('Current permission status: $status'); // Debug print
 
     if (status.isGranted) {
@@ -297,11 +314,10 @@ class _BillsScreenState extends State<BillsScreen> {
     );
   }
 
-  Future _generatePDF(Map<String, dynamic> billData) async {
+  Future<void> _generatePDF(Map<String, dynamic> billData) async {
     try {
       // Check storage permission first
       bool hasPermission = await _checkAndRequestStoragePermission();
-
       if (!hasPermission) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -331,7 +347,6 @@ class _BillsScreenState extends State<BillsScreen> {
             duration: Duration(seconds: 2),
           ),
         );
-
         // Directly open the PDF without dialog
         await _openPDFDirectly(pdfResult['localPath']);
       } else {
@@ -355,7 +370,7 @@ class _BillsScreenState extends State<BillsScreen> {
   }
 
   // Updated method to directly open PDF
-  Future _openPDFDirectly(String filePath) async {
+  Future<void> _openPDFDirectly(String filePath) async {
     try {
       final result = await OpenFile.open(filePath);
       if (result.type != ResultType.done) {
@@ -380,7 +395,7 @@ class _BillsScreenState extends State<BillsScreen> {
   }
 
   // Add this method to handle PDF opening
-  Future _openPDF(String filePath) async {
+  Future<void> _openPDF(String filePath) async {
     try {
       final result = await OpenFile.open(filePath);
       if (result.type != ResultType.done) {

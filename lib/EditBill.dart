@@ -6,7 +6,6 @@ import 'package:fluttertoast/fluttertoast.dart';
 
 class EditBillScreen extends StatefulWidget {
   final String billNumber;
-
   const EditBillScreen({super.key, required this.billNumber});
 
   @override
@@ -17,11 +16,9 @@ class _EditBillScreenState extends State<EditBillScreen> {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController billNumberController = TextEditingController();
-
   DateTime selectedDate = DateTime.now();
-  List<Map<String, String>> items = []; // Fixed: Added proper generic type
+  List<Map<String, dynamic>> items = [];
   int quantity = 1;
-
   final user = FirebaseAuth.instance.currentUser;
   bool isLoading = true;
   String? billDocumentId;
@@ -45,41 +42,43 @@ class _EditBillScreenState extends State<EditBillScreen> {
         final data = doc.data();
         billDocumentId = doc.id;
 
-        setState(() {
-          nameController.text = data['customerName'] ?? '';
-          phoneController.text = data['customerPhone'] ?? '';
-          billNumberController.text = data['billNumber'] ?? '';
-          selectedDate = (data['date'] as Timestamp?)?.toDate() ?? DateTime.now();
-          items = List<Map<String, String>>.from(
-              (data['items'] as List?)?.map((item) => Map<String, String>.from(item)) ?? []
-          );
-          isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            nameController.text = data['customerName'] ?? '';
+            phoneController.text = data['customerPhone'] ?? '';
+            billNumberController.text = data['billNumber'] ?? '';
+            selectedDate = (data['date'] as Timestamp?)?.toDate() ?? DateTime.now();
+            items = List<Map<String, dynamic>>.from(
+                (data['items'] as List?)?.map((item) => Map<String, dynamic>.from(item)) ?? []
+            );
+            isLoading = false;
+          });
+        }
       } else {
+        if (mounted) {
+          setState(() {
+            isLoading = false;
+          });
+          Fluttertoast.showToast(
+            msg: 'Bill not found',
+            backgroundColor: Colors.red,
+            textColor: Colors.white,
+          );
+          Navigator.pop(context);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
         setState(() {
           isLoading = false;
         });
         Fluttertoast.showToast(
-          msg: 'Bill not found',
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
+          msg: 'Error loading bill: $e',
           backgroundColor: Colors.red,
           textColor: Colors.white,
         );
         Navigator.pop(context);
       }
-    } catch (e) {
-      setState(() {
-        isLoading = false;
-      });
-      Fluttertoast.showToast(
-        msg: 'Error loading bill: Rs.e',
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
-      Navigator.pop(context);
     }
   }
 
@@ -90,7 +89,6 @@ class _EditBillScreenState extends State<EditBillScreen> {
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
     );
-
     if (picked != null) {
       setState(() {
         selectedDate = picked;
@@ -98,6 +96,7 @@ class _EditBillScreenState extends State<EditBillScreen> {
     }
   }
 
+  // FIXED: Same approach as AddBill.dart - proper controller management
   void addItem() {
     showDialog(
       context: context,
@@ -127,76 +126,13 @@ class _EditBillScreenState extends State<EditBillScreen> {
                     final doc = snapshot.data!.docs[index];
                     final data = doc.data() as Map<String, dynamic>;
 
-                    // Create a separate controller for each product
-                    final TextEditingController productPriceController = TextEditingController();
-                    int productQuantity = 1;
-
-                    return StatefulBuilder(
-                      builder: (context, setDialogState) {
-                        return Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  data['product'] ?? 'Unknown Product',
-                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    const Text('Quantity: '),
-                                    IconButton(
-                                      onPressed: () {
-                                        if (productQuantity > 1) {
-                                          setDialogState(() {
-                                            productQuantity--;
-                                          });
-                                        }
-                                      },
-                                      icon: const Icon(Icons.remove),
-                                    ),
-                                    Text(productQuantity.toString()),
-                                    IconButton(
-                                      onPressed: () {
-                                        setDialogState(() {
-                                          productQuantity++;
-                                        });
-                                      },
-                                      icon: const Icon(Icons.add),
-                                    ),
-                                  ],
-                                ),
-                                TextField(
-                                  controller: productPriceController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Price',
-                                    prefixText: '\Rs.',
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                ),
-                                const SizedBox(height: 8),
-                                ElevatedButton(
-                                  onPressed: () {
-                                    if (productPriceController.text.isNotEmpty) {
-                                      setState(() {
-                                        items.add({
-                                          'name': data['product'] ?? 'Unknown',
-                                          'quantity': productQuantity.toString(),
-                                          'price': productPriceController.text,
-                                        });
-                                      });
-                                      productPriceController.dispose();
-                                      Navigator.of(context).pop();
-                                    }
-                                  },
-                                  child: const Text("Add"),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
+                    return _ProductSelectionCard(
+                      productData: data,
+                      onItemAdded: (item) {
+                        setState(() {
+                          items.add(item);
+                        });
+                        Navigator.of(context).pop();
                       },
                     );
                   },
@@ -215,80 +151,28 @@ class _EditBillScreenState extends State<EditBillScreen> {
     );
   }
 
+  // FIXED: Proper edit item dialog
   void editItem(int index) {
     final item = items[index];
-    final editPriceController = TextEditingController(text: item['price']);
-    int editQuantity = int.tryParse(item['quantity'] ?? '1') ?? 1;
 
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Edit Rs.${item['name']}'),
-          content: StatefulBuilder(
-            builder: (context, setDialogState) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      const Text('Quantity: '),
-                      IconButton(
-                        onPressed: () {
-                          if (editQuantity > 1) {
-                            setDialogState(() {
-                              editQuantity--;
-                            });
-                          }
-                        },
-                        icon: const Icon(Icons.remove),
-                      ),
-                      Text(editQuantity.toString()),
-                      IconButton(
-                        onPressed: () {
-                          setDialogState(() {
-                            editQuantity++;
-                          });
-                        },
-                        icon: const Icon(Icons.add),
-                      ),
-                    ],
-                  ),
-                  TextField(
-                    controller: editPriceController,
-                    decoration: const InputDecoration(
-                      labelText: 'Price',
-                      prefixText: '\Rs.',
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                ],
-              );
+          title: Text('Edit ${item['name']}'),
+          content: _EditItemDialog(
+            initialItem: item,
+            onItemUpdated: (updatedItem) {
+              setState(() {
+                items[index] = updatedItem;
+              });
+              Navigator.of(context).pop();
             },
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                editPriceController.dispose();
-                Navigator.of(context).pop();
-              },
+              onPressed: () => Navigator.of(context).pop(),
               child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (editPriceController.text.isNotEmpty) {
-                  setState(() {
-                    items[index] = {
-                      'name': item['name'] ?? 'Unknown',
-                      'quantity': editQuantity.toString(),
-                      'price': editPriceController.text,
-                    };
-                  });
-                  editPriceController.dispose();
-                  Navigator.of(context).pop();
-                }
-              },
-              child: const Text('Update'),
             ),
           ],
         );
@@ -310,8 +194,6 @@ class _EditBillScreenState extends State<EditBillScreen> {
     if (nameController.text.isEmpty || items.isEmpty) {
       Fluttertoast.showToast(
         msg: 'Please add customer name and items',
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
         backgroundColor: Colors.orange,
         textColor: Colors.white,
       );
@@ -321,8 +203,6 @@ class _EditBillScreenState extends State<EditBillScreen> {
     if (billDocumentId == null) {
       Fluttertoast.showToast(
         msg: 'Bill document not found',
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
         backgroundColor: Colors.red,
         textColor: Colors.white,
       );
@@ -330,12 +210,10 @@ class _EditBillScreenState extends State<EditBillScreen> {
     }
 
     try {
-      // Calculate totals
       double subtotal = calculateSubtotal();
       double tax = subtotal * 0.1;
       double total = subtotal + tax;
 
-      // Update bill in Firestore
       await FirebaseFirestore.instance
           .collection('bills')
           .doc(billDocumentId)
@@ -351,18 +229,17 @@ class _EditBillScreenState extends State<EditBillScreen> {
       });
 
       Fluttertoast.showToast(
-        msg: 'Bill Rs.{widget.billNumber} updated successfully!',
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
+        msg: 'Bill ${widget.billNumber} updated successfully!',
         backgroundColor: Colors.green,
         textColor: Colors.white,
       );
-      Navigator.of(context).pop();
+
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
     } catch (e) {
       Fluttertoast.showToast(
-        msg: 'Error updating bill: Rs.e',
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
+        msg: 'Error updating bill: $e',
         backgroundColor: Colors.red,
         textColor: Colors.white,
       );
@@ -391,7 +268,7 @@ class _EditBillScreenState extends State<EditBillScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Edit Bill - Rs.{widget.billNumber}'),
+        title: Text('Edit Bill - ${widget.billNumber}'),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 1,
@@ -452,27 +329,33 @@ class _EditBillScreenState extends State<EditBillScreen> {
                 : Column(
               children: items.asMap().entries.map((entry) {
                 int index = entry.key;
-                Map<String, String> item = entry.value;
-                return ListTile(
-                  title: Text(item['name'] ?? 'Unknown'),
-                  subtitle: Text('Quantity: Rs.${item['quantity'] ?? '0'}'),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('Rs.${item['price'] ?? '0'}'),
-                      IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: () => editItem(index),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete),
-                        onPressed: () {
-                          setState(() {
-                            items.removeAt(index);
-                          });
-                        },
-                      ),
-                    ],
+                Map<String, dynamic> item = entry.value;
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    title: Text(item['name'] ?? 'Unknown'),
+                    subtitle: Text('Quantity: ${item['quantity'] ?? '0'}'),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '₹${item['price'] ?? '0'}',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.blue),
+                          onPressed: () => editItem(index),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () {
+                            setState(() {
+                              items.removeAt(index);
+                            });
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 );
               }).toList(),
@@ -484,21 +367,21 @@ class _EditBillScreenState extends State<EditBillScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text("Subtotal:"),
-                Text("Rs.${subtotal.toStringAsFixed(2)}"),
+                Text("₹${subtotal.toStringAsFixed(2)}"),
               ],
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text("Tax (10%):"),
-                Text("Rs.${tax.toStringAsFixed(2)}"),
+                Text("₹${tax.toStringAsFixed(2)}"),
               ],
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text("Total:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text("Rs.${total.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text("₹${total.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 20),
@@ -524,5 +407,272 @@ class _EditBillScreenState extends State<EditBillScreen> {
     phoneController.dispose();
     billNumberController.dispose();
     super.dispose();
+  }
+}
+
+// FIXED: Separate StatefulWidget for Product Selection Card (same as AddBill.dart)
+class _ProductSelectionCard extends StatefulWidget {
+  final Map<String, dynamic> productData;
+  final Function(Map<String, dynamic>) onItemAdded;
+
+  const _ProductSelectionCard({
+    required this.productData,
+    required this.onItemAdded,
+  });
+
+  @override
+  _ProductSelectionCardState createState() => _ProductSelectionCardState();
+}
+
+class _ProductSelectionCardState extends State<_ProductSelectionCard> {
+  late TextEditingController productPriceController;
+  int productQuantity = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    productPriceController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    productPriceController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.productData['product'] ?? 'Unknown Product',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+
+            // Quantity controls
+            Row(
+              children: [
+                const Text('Quantity: ', style: TextStyle(fontWeight: FontWeight.w500)),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        onPressed: () {
+                          if (productQuantity > 1) {
+                            setState(() {
+                              productQuantity--;
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.remove, size: 16),
+                        constraints: const BoxConstraints(minWidth: 35, minHeight: 35),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        child: Text(
+                          productQuantity.toString(),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () {
+                          setState(() {
+                            productQuantity++;
+                          });
+                        },
+                        icon: const Icon(Icons.add, size: 16),
+                        constraints: const BoxConstraints(minWidth: 35, minHeight: 35),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // Price input
+            TextField(
+              controller: productPriceController,
+              decoration: const InputDecoration(
+                labelText: 'Price',
+                prefixText: '₹',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+            ),
+
+            const SizedBox(height: 16),
+
+            // Add button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  if (productPriceController.text.isNotEmpty) {
+                    widget.onItemAdded({
+                      'name': widget.productData['product'] ?? 'Unknown',
+                      'quantity': productQuantity.toString(),
+                      'price': productPriceController.text,
+                    });
+                  } else {
+                    Fluttertoast.showToast(
+                      msg: 'Please enter a price',
+                      backgroundColor: Colors.orange,
+                      textColor: Colors.white,
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                child: const Text("Add to Bill"),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// FIXED: Separate StatefulWidget for Edit Item Dialog
+class _EditItemDialog extends StatefulWidget {
+  final Map<String, dynamic> initialItem;
+  final Function(Map<String, dynamic>) onItemUpdated;
+
+  const _EditItemDialog({
+    required this.initialItem,
+    required this.onItemUpdated,
+  });
+
+  @override
+  _EditItemDialogState createState() => _EditItemDialogState();
+}
+
+class _EditItemDialogState extends State<_EditItemDialog> {
+  late TextEditingController editPriceController;
+  late int editQuantity;
+
+  @override
+  void initState() {
+    super.initState();
+    editPriceController = TextEditingController(text: widget.initialItem['price']);
+    editQuantity = int.tryParse(widget.initialItem['quantity'] ?? '1') ?? 1;
+  }
+
+  @override
+  void dispose() {
+    editPriceController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Quantity controls
+        Row(
+          children: [
+            const Text('Quantity: ', style: TextStyle(fontWeight: FontWeight.w500)),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: () {
+                      if (editQuantity > 1) {
+                        setState(() {
+                          editQuantity--;
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.remove, size: 18),
+                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      editQuantity.toString(),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      setState(() {
+                        editQuantity++;
+                      });
+                    },
+                    icon: const Icon(Icons.add, size: 18),
+                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // Price input
+        TextField(
+          controller: editPriceController,
+          decoration: const InputDecoration(
+            labelText: 'Price',
+            prefixText: '₹',
+            border: OutlineInputBorder(),
+          ),
+          keyboardType: TextInputType.number,
+        ),
+
+        const SizedBox(height: 20),
+
+        // Update button
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: () {
+              if (editPriceController.text.isNotEmpty) {
+                widget.onItemUpdated({
+                  'name': widget.initialItem['name'] ?? 'Unknown',
+                  'quantity': editQuantity.toString(),
+                  'price': editPriceController.text,
+                });
+              } else {
+                Fluttertoast.showToast(
+                  msg: 'Please enter a price',
+                  backgroundColor: Colors.orange,
+                  textColor: Colors.white,
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            child: const Text('Update Item'),
+          ),
+        ),
+      ],
+    );
   }
 }
