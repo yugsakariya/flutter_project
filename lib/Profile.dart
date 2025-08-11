@@ -68,25 +68,11 @@ class _ProfileState extends State<Profile> {
             child: Column(
               children: [
                 const SizedBox(height: 20),
-                CircleAvatar(
-                  radius: 55,
-                  backgroundColor: Colors.indigo.withOpacity(0.1),
-                  child: const CircleAvatar(
-                    radius: 50,
-                    backgroundImage: AssetImage('assets/images/default_avatar.png'),
-                  ),
-                ),
-                const SizedBox(height: 12),
                 Text(
                   data["name"] ?? 'No Name',
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
-                Text(
-                  data["designation"] ?? 'Flutter Developer',
-                  style: const TextStyle(color: Colors.grey),
-                ),
                 const SizedBox(height: 30),
-
                 _buildInfoCard(
                   title: 'Personal Information',
                   items: [

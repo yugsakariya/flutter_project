@@ -197,7 +197,7 @@ class _DashboardState extends State<Dashboard> {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection("bills")
-          .orderBy("timestamp", descending: true)
+          .orderBy("updatedAt", descending: true)
           .where("user", isEqualTo: user.uid)
           .limit(3)
           .snapshots(),

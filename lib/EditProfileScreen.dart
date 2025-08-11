@@ -166,16 +166,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           child: ListView(
             children: [
               const SizedBox(height: 20),
-              CircleAvatar(
-                radius: 55,
-                backgroundColor: Colors.blueAccent.withOpacity(0.1),
-                child: const CircleAvatar(
-                  radius: 50,
-                  backgroundImage: AssetImage('assets/avatar.png'),
-                ),
-              ),
-              const SizedBox(height: 20),
-
               _buildTextField(_nameController, "Name", Icons.person),
               _buildTextField(
                   _phoneController,
