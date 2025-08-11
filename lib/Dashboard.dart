@@ -63,7 +63,7 @@ class _DashboardState extends State<Dashboard> {
       onWillPop: _showExitDialog,
       child: Scaffold(
         backgroundColor: Colors.grey[100],
-        appBar: AppBar(
+        appBar : AppBar(
           backgroundColor: Colors.indigo,
           automaticallyImplyLeading: false,
           title: Text("Dashboard"),

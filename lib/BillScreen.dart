@@ -36,19 +36,9 @@ class _BillsScreenState extends State<BillsScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text('Bills'),
+          title: Text('Billing'),
           backgroundColor: Colors.indigo,
           foregroundColor: Colors.white,
-          leading: IconButton(
-            icon: Icon(Icons.arrow_back),
-            onPressed: () {
-              if (widget.goToDashboard != null) {
-                widget.goToDashboard!();
-              } else {
-                Navigator.pop(context);
-              }
-            },
-          ),
         ),
         body: StreamBuilder<QuerySnapshot>(
           stream: _firestore.collection('bills').where('user', isEqualTo: user?.uid).snapshots(),
