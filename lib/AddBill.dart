@@ -230,8 +230,8 @@ class _NewBillScreenState extends State<NewBillScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('New Bill'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        backgroundColor: Colors.indigo,
+        foregroundColor: Colors.white,
         elevation: 1,
       ),
       body: SingleChildScrollView(

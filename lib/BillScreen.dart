@@ -37,7 +37,7 @@ class _BillsScreenState extends State<BillsScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: Text('Bills'),
-          backgroundColor: Colors.blue,
+          backgroundColor: Colors.indigo,
           foregroundColor: Colors.white,
           leading: IconButton(
             icon: Icon(Icons.arrow_back),
@@ -130,8 +130,8 @@ class _BillsScreenState extends State<BillsScreen> {
               context,
               MaterialPageRoute(builder: (_) => NewBillScreen())
           ),
-          backgroundColor: Colors.blue,
-          child: Icon(Icons.add),
+          backgroundColor: Colors.indigo,
+          child: Icon(Icons.add,color: Colors.white,),
         ),
       ),
     );

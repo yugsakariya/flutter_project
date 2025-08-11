@@ -252,8 +252,8 @@ class _EditBillScreenState extends State<EditBillScreen> {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Edit Bill'),
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
+          backgroundColor: Colors.indigo,
+          foregroundColor: Colors.white,
           elevation: 1,
         ),
         body: const Center(
