@@ -211,7 +211,7 @@ class _EditBillScreenState extends State<EditBillScreen> {
 
     try {
       double subtotal = calculateSubtotal();
-      double tax = subtotal * 0.1;
+      double tax = subtotal * 0.05;
       double total = subtotal + tax;
 
       await FirebaseFirestore.instance
@@ -263,7 +263,7 @@ class _EditBillScreenState extends State<EditBillScreen> {
     }
 
     double subtotal = calculateSubtotal();
-    double tax = subtotal * 0.1;
+    double tax = subtotal * 0.05;
     double total = subtotal + tax;
 
     return Scaffold(
@@ -373,7 +373,7 @@ class _EditBillScreenState extends State<EditBillScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text("Tax (10%):"),
+                const Text("Tax (5%):"),
                 Text("₹${tax.toStringAsFixed(2)}"),
               ],
             ),

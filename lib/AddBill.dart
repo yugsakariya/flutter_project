@@ -187,7 +187,7 @@ class _NewBillScreenState extends State<NewBillScreen> {
       final finalBillNumber = await _generateAndIncrementBillNumber();
 
       double subtotal = calculateSubtotal();
-      double tax = subtotal * 0.1;
+      double tax = subtotal * 0.05;
       double total = subtotal + tax;
 
       await FirebaseFirestore.instance.collection('bills').add({
@@ -201,6 +201,7 @@ class _NewBillScreenState extends State<NewBillScreen> {
         'tax': tax,
         'total': total,
         'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
       });
 
       Fluttertoast.showToast(
@@ -224,7 +225,7 @@ class _NewBillScreenState extends State<NewBillScreen> {
   @override
   Widget build(BuildContext context) {
     double subtotal = calculateSubtotal();
-    double tax = subtotal * 0.1;
+    double tax = subtotal * 0.05;
     double total = subtotal + tax;
 
     return Scaffold(

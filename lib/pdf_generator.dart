@@ -12,22 +12,21 @@ import 'package:intl/intl.dart';
 class PDFGenerator {
   static final user = FirebaseAuth.instance.currentUser;
 
-  // Fetch company info from Firestore profile collection
-  static Future<Map<String, String>> _getCompanyInfo() async {
+  // 1) Firestore: Fetch company profile safely
+  static Future<Map<String, dynamic>> _getCompanyInfo() async {
     try {
-      // Query documents where 'user' field equals current user's UID
       final querySnapshot = await FirebaseFirestore.instance
           .collection('profile')
           .where('user', isEqualTo: user?.uid)
-          .limit(1) // Get only the first matching document
+          .limit(1)
           .get();
 
       if (querySnapshot.docs.isNotEmpty) {
-        final doc = querySnapshot.docs.first;
-        final data = doc.data() as Map<String, dynamic>;
+        final data = querySnapshot.docs.first.data() as Map<String, dynamic>;
         return {
           'companyName': data['company'] ?? 'VINAYAK TRADERS',
-          'address': data['address'] ?? 'A-151, NEW SARDAR MARKET YARD, NATIONAL\nGONDAL - 360311, Mo.: 9605310450',
+          'address': data['address'] ??
+              'A-151, NEW SARDAR MARKET YARD, NATIONAL\nGONDAL - 360311, Mo.: 9605310450',
           'gstin': data['gstin'] ?? '24AAFFE7098EA1ZO',
           'apmc': data['apmc'] ?? '1395',
         };
@@ -36,36 +35,32 @@ class PDFGenerator {
       print('Error fetching company info: $e');
     }
 
-    // Return default values if no document found or error occurred
+    // Safe defaults
     return {
       'companyName': 'VINAYAK TRADERS',
-      'address': 'A-151, NEW SARDAR MARKET YARD, NATIONAL\nGONDAL - 360311, Mo.: 9605310450',
+      'address':
+      'A-151, NEW SARDAR MARKET YARD, NATIONAL\nGONDAL - 360311, Mo.: 9605310450',
       'gstin': '24AAFFE7098EA1ZO',
       'apmc': '1395',
     };
   }
 
-  // Get actual Downloads folder path
-  static Future<String?> _getDownloadsPath() async {
+  // 2) Storage: Get a Downloads-capable path
+  static Future<String> _getDownloadsPath() async {
     if (Platform.isIOS) {
       final directory = await getApplicationDocumentsDirectory();
       return directory.path;
     } else {
-      // For Android - try to access public Downloads folder
       try {
-        // Method 1: Direct path to public Downloads
+        // Method 1
         Directory downloadsDir = Directory('/storage/emulated/0/Download');
-        if (await downloadsDir.exists()) {
-          return downloadsDir.path;
-        }
+        if (await downloadsDir.exists()) return downloadsDir.path;
 
-        // Method 2: Alternative Downloads path
+        // Method 2
         downloadsDir = Directory('/storage/emulated/0/Downloads');
-        if (await downloadsDir.exists()) {
-          return downloadsDir.path;
-        }
+        if (await downloadsDir.exists()) return downloadsDir.path;
 
-        // Method 3: Fallback to external storage + Downloads folder
+        // Method 3
         final externalDir = await getExternalStorageDirectory();
         if (externalDir != null) {
           final downloadsSubDir = Directory('${externalDir.path}/Downloads');
@@ -78,48 +73,43 @@ class PDFGenerator {
         print('Error accessing Downloads folder: $e');
       }
 
-      // Final fallback to documents directory
+      // Final fallback
       final directory = await getApplicationDocumentsDirectory();
       return directory.path;
     }
   }
 
-  // Request storage permissions for Android
+  // 3) Permissions (Android)
   static Future<bool> _requestStoragePermission() async {
     if (Platform.isIOS) return true;
 
-    // Check for storage permission
+    // Storage permission first
     var permission = Permission.storage;
-    if (await permission.isGranted) {
-      return true;
-    }
+    if (await permission.isGranted) return true;
 
     var status = await permission.request();
-    if (status.isGranted) {
-      return true;
-    }
+    if (status.isGranted) return true;
 
-    // Try MANAGE_EXTERNAL_STORAGE for newer Android versions
+    // For Android 11+
     permission = Permission.manageExternalStorage;
     status = await permission.request();
     return status.isGranted;
   }
 
-  // Main PDF generation method
+  // 4) Public method to generate the PDF
   static Future<Map<String, dynamic>> generateGSTVoucher({
     required Map<String, dynamic> billData,
   }) async {
     try {
-      // Request storage permission first
       final hasPermission = await _requestStoragePermission();
       if (!hasPermission) {
-        throw Exception('Storage permission denied. Please grant permission to save PDF.');
+        throw Exception(
+            'Storage permission denied. Please grant permission to save PDF.');
       }
 
       final pdf = pw.Document();
       final companyInfo = await _getCompanyInfo();
 
-      // Build the PDF page
       pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
@@ -134,7 +124,7 @@ class PDFGenerator {
                 pw.SizedBox(height: 15),
                 _buildItemsTable(billData),
                 pw.SizedBox(height: 15),
-                _buildTotalsSection(billData, companyInfo), // Pass companyInfo
+                _buildTotalsSection(billData, companyInfo),
                 pw.SizedBox(height: 20),
                 _buildFooter(companyInfo),
               ],
@@ -143,23 +133,22 @@ class PDFGenerator {
         ),
       );
 
-      final fileName = 'GST_Voucher_${billData['billNumber'] ?? DateTime.now().millisecondsSinceEpoch}.pdf';
+      final fileName =
+          'GST_Voucher_${billData['billNumber'] ?? DateTime.now().millisecondsSinceEpoch}.pdf';
       final pdfBytes = await pdf.save();
 
-      // Get Downloads folder path
       final downloadsPath = await _getDownloadsPath();
-      if (downloadsPath == null) {
+      if (downloadsPath.isEmpty) {
         throw Exception('Could not access Downloads folder');
       }
 
-      // Save PDF to Downloads folder
       final file = File('$downloadsPath/$fileName');
       await file.writeAsBytes(pdfBytes);
 
-      print('PDF saved to Downloads folder: ${file.path}');
+      print('PDF saved to: ${file.path}');
       return {
         'success': true,
-        'downloadStatus': 'PDF saved to Downloads folder successfully',
+        'downloadStatus': 'PDF saved successfully',
         'localPath': file.path,
         'fileName': fileName,
         'actualLocation': file.path,
@@ -173,38 +162,52 @@ class PDFGenerator {
     }
   }
 
-  // Build PDF header section
-  static pw.Widget _buildHeader(Map<String, String> companyInfo) {
+  // 5) UI Blocks — refined visual design
+
+  // Header
+  static pw.Widget _buildHeader(Map companyInfo) {
     return pw.Container(
-      width: double.infinity,
       decoration: pw.BoxDecoration(
-        border: pw.Border.all(width: 1),
+        border: pw.Border.all(color: PdfColors.grey600, width: 0.8),
       ),
       child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         children: [
           pw.Container(
-            width: double.infinity,
             color: PdfColors.grey300,
-            padding: const pw.EdgeInsets.symmetric(vertical: 8),
+            padding: const pw.EdgeInsets.symmetric(vertical: 10),
             child: pw.Text(
               'GST Payment Voucher',
-              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
               textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+                letterSpacing: 0.2,
+              ),
             ),
           ),
           pw.Padding(
-            padding: const pw.EdgeInsets.all(12),
+            padding: const pw.EdgeInsets.fromLTRB(14, 10, 14, 12),
             child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
                 pw.Text(
-                  companyInfo['companyName'] ?? 'VINAYAK TRADERS',
-                  style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+                  (companyInfo['companyName'] ?? 'VINAYAK TRADERS')
+                      .toString()
+                      .toUpperCase(),
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
                 ),
                 pw.SizedBox(height: 4),
                 pw.Text(
                   companyInfo['address'] ?? 'Company Address',
                   textAlign: pw.TextAlign.center,
-                  style: const pw.TextStyle(fontSize: 9),
+                  style: const pw.TextStyle(
+                    fontSize: 9,
+                    color: PdfColors.grey700,
+                  ),
                 ),
               ],
             ),
@@ -214,178 +217,60 @@ class PDFGenerator {
     );
   }
 
-  // Build bill information section (removed village line)
-  static pw.Widget _buildBillInfo(Map<String, dynamic> billData, Map<String, String> companyInfo) {
-    return pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+  // Bill Info
+  static pw.Widget _buildBillInfo(
+      Map<String, dynamic> billData, Map companyInfo) {
+    pw.Widget labelValue(String label, String value) => pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text('APMC No.: ${companyInfo['apmc']}', style: const pw.TextStyle(fontSize: 10)),
-            pw.Text('GSTIN No.: ${companyInfo['gstin']}', style: const pw.TextStyle(fontSize: 10)),
-          ],
+        pw.Container(
+          width: 80,
+          child: pw.Text(
+            '$label:',
+            style: pw.TextStyle(
+                fontSize: 10, fontWeight: pw.FontWeight.bold),
+          ),
         ),
-        pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.end,
-          children: [
-            pw.Text('Voucher No.: ${billData['billNumber'] ?? 'N/A'}', style: const pw.TextStyle(fontSize: 10)),
-            pw.Text('Voucher Date: ${_formatDate(billData['date'])}', style: const pw.TextStyle(fontSize: 10)),
-            // Removed: pw.Text('Village: DHANDHUSAR', style: const pw.TextStyle(fontSize: 10)),
-          ],
+        pw.Expanded(
+          child: pw.Text(
+            value,
+            style: const pw.TextStyle(fontSize: 10),
+          ),
         ),
       ],
     );
-  }
 
-  // Build items table
-  static pw.Widget _buildItemsTable(Map<String, dynamic> billData) {
-    final items = billData['items'] as List? ?? [];
-
-    return pw.Table(
-      border: pw.TableBorder.all(),
-      columnWidths: {
-        0: const pw.FlexColumnWidth(2.5),
-        1: const pw.FlexColumnWidth(2),
-        2: const pw.FlexColumnWidth(1.5),
-        3: const pw.FlexColumnWidth(1.5),
-        4: const pw.FlexColumnWidth(1.5),
-        5: const pw.FlexColumnWidth(2),
-      },
-      children: [
-        // Header row
-        pw.TableRow(
-          decoration: const pw.BoxDecoration(color: PdfColors.grey300),
-          children: [
-            _buildTableCell('Party Name', isHeader: true),
-            _buildTableCell('Product', isHeader: true),
-            _buildTableCell('HSN Code', isHeader: true),
-            _buildTableCell('Qty', isHeader: true),
-            _buildTableCell('Rate', isHeader: true),
-            _buildTableCell('Amount', isHeader: true),
-          ],
-        ),
-        // Data rows
-        ...items.map((item) {
-          final quantity = double.tryParse(item['quantity']?.toString() ?? '0') ?? 0;
-          final price = double.tryParse(item['price']?.toString() ?? '0') ?? 0;
-          final amount = quantity * price;
-
-          return pw.TableRow(
-            children: [
-              _buildTableCell(billData['customerName'] ?? 'N/A'),
-              _buildTableCell(item['name'] ?? 'N/A'),
-              _buildTableCell('0603'), // HSN code for cumin
-              _buildTableCell('${quantity.toStringAsFixed(1)}'),
-              _buildTableCell('Rs.${price.toStringAsFixed(2)}'),
-              _buildTableCell('Rs.${amount.toStringAsFixed(2)}'),
-            ],
-          );
-        }).toList(),
-      ],
-    );
-  }
-
-  // Build table cell
-  static pw.Widget _buildTableCell(String text, {bool isHeader = false}) {
     return pw.Container(
-      padding: const pw.EdgeInsets.all(6),
-      child: pw.Text(
-        text,
-        style: pw.TextStyle(
-          fontSize: 8,
-          fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
-        ),
-        textAlign: pw.TextAlign.center,
+      margin: const pw.EdgeInsets.only(top: 8),
+      padding: const pw.EdgeInsets.all(10),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey600, width: 0.8),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(2)),
       ),
-    );
-  }
-
-  // Build totals section (now uses company name from profile in signature)
-  static pw.Widget _buildTotalsSection(Map<String, dynamic> billData, Map<String, String> companyInfo) {
-    final subtotal = (billData['subtotal'] as num?)?.toDouble() ?? 0.0;
-    final tax = (billData['tax'] as num?)?.toDouble() ?? 0.0;
-    final total = (billData['total'] as num?)?.toDouble() ?? 0.0;
-    final cgst = tax / 2;
-    final sgst = tax / 2;
-
-    return pw.Container(
-      decoration: pw.BoxDecoration(border: pw.Border.all()),
       child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Expanded(
-            flex: 3,
-            child: pw.Container(
-              padding: const pw.EdgeInsets.all(8),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Text('Tax Payable under Reverse Charge',
-                      style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 8),
-                  pw.Row(
-                    children: [
-                      pw.Text('Taxable Value', style: const pw.TextStyle(fontSize: 9)),
-                      pw.SizedBox(width: 20),
-                      pw.Text('CGST', style: const pw.TextStyle(fontSize: 9)),
-                      pw.SizedBox(width: 40),
-                      pw.Text('SGST', style: const pw.TextStyle(fontSize: 9)),
-                      pw.SizedBox(width: 40),
-                      pw.Text('Invoice Total', style: const pw.TextStyle(fontSize: 9)),
-                    ],
-                  ),
-                  pw.SizedBox(height: 4),
-                  pw.Row(
-                    children: [
-                      pw.Container(
-                        width: 80,
-                        child: pw.Text('Rs.${subtotal.toStringAsFixed(2)}', style: const pw.TextStyle(fontSize: 9)),
-                      ),
-                      pw.Container(
-                        width: 60,
-                        child: pw.Column(
-                          children: [
-                            pw.Text('Rate: 2.5%', style: const pw.TextStyle(fontSize: 8)),
-                            pw.Text('Amount: Rs.${cgst.toStringAsFixed(2)}', style: const pw.TextStyle(fontSize: 8)),
-                          ],
-                        ),
-                      ),
-                      pw.Container(
-                        width: 60,
-                        child: pw.Column(
-                          children: [
-                            pw.Text('Rate: 2.5%', style: const pw.TextStyle(fontSize: 8)),
-                            pw.Text('Amount: Rs.${sgst.toStringAsFixed(2)}', style: const pw.TextStyle(fontSize: 8)),
-                          ],
-                        ),
-                      ),
-                      pw.Text('Rs.${total.toStringAsFixed(2)}',
-                          style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                    ],
-                  ),
-                ],
-              ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                labelValue('APMC No.', (companyInfo['apmc'] ?? '—').toString()),
+                pw.SizedBox(height: 4),
+                labelValue('GSTIN', (companyInfo['gstin'] ?? '—').toString()),
+              ],
             ),
           ),
-          pw.Container(
-            width: 1,
-            height: 80,
-            color: PdfColors.black,
-          ),
+          pw.SizedBox(width: 16),
           pw.Expanded(
-            child: pw.Container(
-              padding: const pw.EdgeInsets.all(8),
-              height: 80,
-              child: pw.Column(
-                mainAxisAlignment: pw.MainAxisAlignment.center,
-                children: [
-                  // Use company name from profile data instead of hardcoded "VINAYAK TRADERS"
-                  pw.Text(companyInfo['companyName'] ?? 'VINAYAK TRADERS',
-                      style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 20),
-                  pw.Text('(Authorised Signature)', style: const pw.TextStyle(fontSize: 8)),
-                ],
-              ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                labelValue('Bill No.',
+                    (billData['billNumber'] ?? 'N/A').toString()),
+                pw.SizedBox(height: 4),
+                labelValue('Bill Date', _formatDate(billData['date'])),
+              ],
             ),
           ),
         ],
@@ -393,24 +278,185 @@ class PDFGenerator {
     );
   }
 
-  // Build footer section
-  static pw.Widget _buildFooter(Map<String, String> companyInfo) {
+  // Items Table
+  static pw.Widget _buildItemsTable(Map<String, dynamic> billData) {
+    final items = (billData['items'] as List?) ?? [];
+
+    pw.Widget cell(String text,
+        {bool isHeader = false,
+          pw.Alignment align = pw.Alignment.centerLeft}) {
+      return pw.Container(
+        alignment: align,
+        padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(
+            fontSize: 9,
+            fontWeight:
+            isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+          ),
+        ),
+      );
+    }
+
+    final header = pw.TableRow(
+      decoration: const pw.BoxDecoration(color: PdfColors.grey300),
+      children: [
+        cell('Party Name', isHeader: true),
+        cell('Product', isHeader: true),
+        cell('HSN', isHeader: true),
+        cell('Qty', isHeader: true, align: pw.Alignment.centerRight),
+        cell('Rate', isHeader: true, align: pw.Alignment.centerRight),
+        cell('Amount', isHeader: true, align: pw.Alignment.centerRight),
+      ],
+    );
+
+    final rows = <pw.TableRow>[];
+    for (int i = 0; i < items.length; i++) {
+      final item = items[i] as Map? ?? {};
+      final quantity =
+          double.tryParse(item['quantity']?.toString() ?? '0') ?? 0;
+      final price = double.tryParse(item['price']?.toString() ?? '0') ?? 0;
+      final amount = quantity * price;
+
+      rows.add(
+        pw.TableRow(
+          decoration:
+          i.isEven ? const pw.BoxDecoration(color: PdfColors.grey100) : null,
+          children: [
+            cell((billData['customerName'] ?? 'N/A').toString()),
+            cell((item['name'] ?? 'N/A').toString()),
+            cell('0603'),
+            cell(quantity.toStringAsFixed(1),
+                align: pw.Alignment.centerRight),
+            cell('Rs.${price.toStringAsFixed(2)}',
+                align: pw.Alignment.centerRight),
+            cell('Rs.${amount.toStringAsFixed(2)}',
+                align: pw.Alignment.centerRight),
+          ],
+        ),
+      );
+    }
+
+    return pw.Table(
+      border: pw.TableBorder.all(color: PdfColors.grey600, width: 0.6),
+      columnWidths: const {
+        0: pw.FlexColumnWidth(2.6),
+        1: pw.FlexColumnWidth(2.2),
+        2: pw.FlexColumnWidth(1.1),
+        3: pw.FlexColumnWidth(1.1),
+        4: pw.FlexColumnWidth(1.4),
+        5: pw.FlexColumnWidth(1.6),
+      },
+      children: [header, ...rows],
+    );
+  }
+
+  // Totals + Signature
+  static pw.Widget _buildTotalsSection(
+      Map<String, dynamic> billData, Map companyInfo) {
+
+    final subtotal = (billData['subtotal'] as num?)?.toDouble() ?? 0.0;
+    // final tax = (billData['tax'] as num?)?.toDouble() ?? 0.0; // Original tax value, if needed for other calculations
+
+    // Calculate actual CGST and SGST at 2.5% each of taxable value
+    final cgst = subtotal * 0.025; // 2.5% of taxable value
+    final sgst = subtotal * 0.025; // 2.5% of taxable value
+    final calculatedTax = cgst + sgst; // This is the correct total tax based on subtotal
+
+    // Use provided total or calculate it
+    final providedTotal = (billData['total'] as num?)?.toDouble();
+    final total = providedTotal ?? (subtotal + calculatedTax);
+
+    pw.Widget kv(String k, String v, {bool bold=false}) => pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(k, style: pw.TextStyle(
+          fontSize: 10,
+          fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+        )),
+        pw.Text(v, style: pw.TextStyle(
+          fontSize: 10,
+          fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+        )),
+      ],
+    );
+
+    final left = pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text('Tax Summary (RCM)',
+            style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 6),
+        kv('Taxable Value', 'Rs.${subtotal.toStringAsFixed(2)}'),
+        pw.SizedBox(height: 4),
+        kv('CGST (2.5%)', 'Rs.${cgst.toStringAsFixed(2)}'),
+        pw.SizedBox(height: 4),
+        kv('SGST (2.5%)', 'Rs.${sgst.toStringAsFixed(2)}'),
+        pw.Divider(color: PdfColors.grey600, thickness: 0.6),
+        kv('Invoice Total', 'Rs.${total.toStringAsFixed(2)}', bold: true),
+      ],
+    );
+
+    final right = pw.Column(
+      mainAxisAlignment: pw.MainAxisAlignment.end,
+      children: [
+        pw.SizedBox(height: 4),
+        pw.Text(
+          (companyInfo['companyName'] ?? 'VINAYAK TRADERS').toString(),
+          style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 24),
+        pw.Text('(Authorised Signature)',
+            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
+      ],
+    );
+
     return pw.Container(
-      width: double.infinity,
-      padding: const pw.EdgeInsets.symmetric(vertical: 8),
-      decoration: pw.BoxDecoration(border: pw.Border.all()),
-      child: pw.Text(
-        '${companyInfo['companyName']} Pvt Ltd',
-        style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
-        textAlign: pw.TextAlign.center,
+      padding: const pw.EdgeInsets.all(10),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey600, width: 0.8),
+      ),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Expanded(flex: 3, child: left),
+          pw.Container(width: 1, height: 90, color: PdfColors.grey600),
+          pw.SizedBox(width: 10),
+          pw.Expanded(flex: 2, child: right),
+        ],
       ),
     );
   }
 
-  // Format date utility
+
+  // Footer
+  static pw.Widget _buildFooter(Map companyInfo) {
+    final name = (companyInfo['companyName'] ?? 'VINAYAK TRADERS').toString();
+    return pw.Container(
+      padding: const pw.EdgeInsets.only(top: 8),
+      decoration: const pw.BoxDecoration(
+        border: pw.Border(
+          top: pw.BorderSide(color: PdfColors.grey600, width: 0.8),
+        ),
+      ),
+      child: pw.Text(
+        name,
+        textAlign: pw.TextAlign.center,
+        style: pw.TextStyle(
+            fontSize: 10,
+            fontWeight: pw.FontWeight.bold,
+            color: PdfColors.grey800),
+      ),
+    );
+  }
+
+  // Utils
   static String _formatDate(dynamic date) {
     try {
-      if (date == null) return DateFormat('dd/MM/yyyy').format(DateTime.now());
+      if (date == null) {
+        return DateFormat('dd/MM/yyyy').format(DateTime.now());
+      }
       if (date is Timestamp) {
         return DateFormat('dd/MM/yyyy').format(date.toDate());
       }
@@ -418,7 +464,7 @@ class PDFGenerator {
         return DateFormat('dd/MM/yyyy').format(date);
       }
       return DateFormat('dd/MM/yyyy').format(DateTime.now());
-    } catch (e) {
+    } catch (_) {
       return DateFormat('dd/MM/yyyy').format(DateTime.now());
     }
   }
