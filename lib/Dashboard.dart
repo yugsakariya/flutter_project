@@ -136,19 +136,6 @@ class _DashboardState extends State<Dashboard> {
                 ],
               ),
               _buildRecentTransactions(),
-              SizedBox(height: 30),
-              Row(
-                children: [
-                  _buildSectionTitle("Recent Bills"),
-                  Spacer(),
-                  TextButton(
-                    onPressed: () => widget.onTabChange?.call(3),
-                    child: Text("View More "),
-                  )
-                ],
-              ),
-              _buildRecentBills(),
-
               // SizedBox(height: 24),
               // _buildSectionTitle("Recent Billing"),
               // _buildRecentList([
@@ -186,37 +173,6 @@ class _DashboardState extends State<Dashboard> {
           "amount": "₹${doc['unitPrice'] ?? '0'}",
           "date": (doc['date'] != null && doc['date'] is Timestamp)
               ? DateFormat('dd-MM-yyyy').format(doc['date'].toDate())
-              : 'No Date'
-        }).toList();
-
-        return _buildRecentList(transactions);
-      },
-    );
-  }
-  Widget _buildRecentBills() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection("bills")
-          .orderBy("updatedAt", descending: true)
-          .where("user", isEqualTo: user.uid)
-          .limit(3)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return Center(child: Text('No Bills found'));
-        }
-
-        final transactions = snapshot.data!.docs.map((doc) => {
-          "title": _capitalizeFirstLetter(doc['billNumber'] ?? 'Unknown Product'),
-          "amount": "₹${doc['total'] ?? '0'}",
-          "date": (doc['createdAt'] != null && doc['createdAt'] is Timestamp)
-              ? DateFormat('dd-MM-yyyy').format(doc['createdAt'].toDate())
               : 'No Date'
         }).toList();
 

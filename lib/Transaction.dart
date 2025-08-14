@@ -29,7 +29,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
   Stream<QuerySnapshot> _getTransactionStream() {
     var query = FirebaseFirestore.instance
         .collection('transactions')
-        .where('user', isEqualTo: user!.uid);
+        .where('user', isEqualTo: user!.uid).orderBy("timestamp",descending: true);
 
     if (_searchQuery.isNotEmpty) {
       query = query
