@@ -22,7 +22,7 @@ class PDFGenerator {
           .get();
 
       if (querySnapshot.docs.isNotEmpty) {
-        final data = querySnapshot.docs.first.data() as Map<String, dynamic>;
+        final data = querySnapshot.docs.first.data();
         return {
           'companyName': data['company'] ?? 'VINAYAK TRADERS',
           'address': data['address'] ??
@@ -467,5 +467,48 @@ class PDFGenerator {
     } catch (_) {
       return DateFormat('dd/MM/yyyy').format(DateTime.now());
     }
+  }
+  static Future<String> generateReport(Map reportData) async {
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.MultiPage(
+        build: (context) => [
+          pw.Text("Transaction Report",
+              style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+          pw.Text("From: ${DateFormat('dd/MM/yyyy').format(reportData['from'])} "
+              "To: ${DateFormat('dd/MM/yyyy').format(reportData['to'])}"),
+          pw.Text("Product: ${reportData['product']}"),
+          pw.SizedBox(height: 10),
+
+          pw.Table.fromTextArray(
+            headers: ["Date", "Product", "Qty", "Unit Price", "Type", "Amount"],
+            data: (reportData['transactions'] as List).map((tx) {
+              final amount = (tx['quantity'] as int) *
+                  (tx['unitPrice'] as num).toDouble();
+              return [
+                DateFormat('dd-MM-yyyy').format(tx['date'].toDate()),
+                tx['product'],
+                tx['quantity'].toString(),
+                tx['unitPrice'].toString(),
+                tx['type'],
+                amount.toStringAsFixed(2),
+              ];
+            }).toList(),
+          ),
+
+          pw.SizedBox(height: 20),
+          pw.Text("Total Purchase: ₹${reportData['totalPurchase'].toStringAsFixed(2)}"),
+          pw.Text("Total Sales: ₹${reportData['totalSales'].toStringAsFixed(2)}"),
+          pw.Text("Net Total: ₹${(reportData['totalSales'] - reportData['totalPurchase']).toStringAsFixed(2)}",
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+        ],
+      ),
+    );
+
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File("${dir.path}/transaction_report.pdf");
+    await file.writeAsBytes(await pdf.save());
+    return file.path;
   }
 }

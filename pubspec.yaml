@@ -42,7 +42,7 @@ dependencies:
   fluttertoast: ^8.2.12
   pdf: ^3.11.3
   printing: ^5.14.2
-  path_provider: ^2.0.15
+  path_provider: ^2.1.5
   permission_handler: ^11.0.1
   open_file: ^3.3.2
   file_saver: ^0.2.9
