@@ -1,5 +1,4 @@
 import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
@@ -667,7 +666,7 @@ class _DashboardState extends State<Dashboard> {
           titleTextStyle: TextStyle(fontSize: 22, color: Colors.white),
           actions: [
             IconButton(
-              icon: Icon(Icons.picture_as_pdf, color: Colors.white),
+              icon: Icon(Icons.report, color: Colors.white),
               tooltip: "Generate Report",
               onPressed: () {
                 _showReportFilterDialog(context);
