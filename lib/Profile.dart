@@ -67,15 +67,14 @@ class _ProfileState extends State<Profile> {
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
-                const SizedBox(height: 20),
-                Text(
-                  data["name"] ?? 'No Name',
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 30),
                 _buildInfoCard(
                   title: 'Personal Information',
                   items: [
+                    {
+                      'icon': Icons.person,
+                      'label': 'Name',
+                      'value': data["name"] ?? 'No Name'
+                    },
                     {
                       'icon': Icons.email,
                       'label': 'Email',

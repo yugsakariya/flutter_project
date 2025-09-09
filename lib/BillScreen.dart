@@ -203,10 +203,6 @@ class _BillsScreenState extends State<BillsScreen> {
               title: Text('Edit Bill'),
               onTap: () {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => EditBillScreen(billNumber: data['billNumber'])));
-                // You can implement edit functionality here
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Edit functionality to be implemented')),
-                );
               },
             ),
             ListTile(

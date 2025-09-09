@@ -19,6 +19,7 @@ class _NewBillScreenState extends State<NewBillScreen> {
   List<Map<String, dynamic>> items = [];
   final user = FirebaseAuth.instance.currentUser;
   String? pendingBillNumber;
+  String? linkedTransactionId; // NEW: For linking with transactions
 
   String formatDate(DateTime date) => DateFormat.yMMMd().format(date);
 
@@ -36,7 +37,7 @@ class _NewBillScreenState extends State<NewBillScreen> {
     }
   }
 
-  // COMPLETELY FIXED: Single item addition (simple approach)
+  // FIXED: Single item addition (simple approach)
   void addItem() {
     showDialog(
       context: context,
@@ -65,7 +66,6 @@ class _NewBillScreenState extends State<NewBillScreen> {
                   itemBuilder: (context, index) {
                     final doc = snapshot.data!.docs[index];
                     final data = doc.data() as Map<String, dynamic>;
-
                     return _ProductSelectionCard(
                       productData: data,
                       onItemAdded: (item) {
@@ -97,7 +97,6 @@ class _NewBillScreenState extends State<NewBillScreen> {
           .collection('billcounter')
           .where('user', isEqualTo: user?.uid)
           .get();
-
       if (querySnapshot.docs.isEmpty) {
         return "INV-1";
       } else {
@@ -117,7 +116,6 @@ class _NewBillScreenState extends State<NewBillScreen> {
           .collection('billcounter')
           .where('user', isEqualTo: user?.uid)
           .get();
-
       if (querySnapshot.docs.isEmpty) {
         await FirebaseFirestore.instance.collection('billcounter').add({
           'user': user?.uid,
@@ -129,7 +127,6 @@ class _NewBillScreenState extends State<NewBillScreen> {
         final data = doc.data();
         final currentCounter = data['counter'] ?? 0;
         final newCounter = currentCounter + 1;
-
         await doc.reference.update({'counter': newCounter});
         return "INV-$newCounter";
       }
@@ -173,6 +170,53 @@ class _NewBillScreenState extends State<NewBillScreen> {
     return subtotal;
   }
 
+  // FIXED: Centralized stock update method
+  Future<void> _updateStock(String productName, int quantity, String operation) async {
+    if (user == null) return;
+
+    try {
+      final stockQuery = await FirebaseFirestore.instance
+          .collection('stocks')
+          .where('product', isEqualTo: productName.toLowerCase().trim())
+          .where('user', isEqualTo: user!.uid)
+          .limit(1)
+          .get();
+
+      final quantityChange = operation == 'sale' ? -quantity : quantity;
+
+      if (stockQuery.docs.isNotEmpty) {
+        final stockDoc = stockQuery.docs.first;
+        final currentStock = stockDoc.data()['quantity'] ?? 0;
+        final newQuantity = currentStock + quantityChange;
+
+        if (newQuantity < 0) {
+          throw Exception('Insufficient stock for $productName. Available: $currentStock');
+        }
+
+        await stockDoc.reference.update({
+          'quantity': newQuantity,
+          'sales': FieldValue.increment(operation == 'sale' ? quantity : 0),
+          'lastUpdated': DateTime.now(),
+        });
+      } else if (operation != 'sale') {
+        // Only create new stock entry for purchases, not sales
+        await FirebaseFirestore.instance.collection('stocks').add({
+          'product': productName.toLowerCase().trim(),
+          'quantity': quantity,
+          'purchase': quantity,
+          'sales': 0,
+          'user': user!.uid,
+          'createdAt': DateTime.now(),
+          'lastUpdated': DateTime.now(),
+        });
+      } else {
+        throw Exception('Cannot sell non-existent product: $productName');
+      }
+    } catch (e) {
+      throw Exception('Stock update failed: $e');
+    }
+  }
+
   Future<void> saveBill() async {
     if (nameController.text.isEmpty || items.isEmpty) {
       Fluttertoast.showToast(
@@ -185,11 +229,21 @@ class _NewBillScreenState extends State<NewBillScreen> {
 
     try {
       final finalBillNumber = await _generateAndIncrementBillNumber();
-
       double subtotal = calculateSubtotal();
       double tax = subtotal * 0.05;
       double total = subtotal + tax;
 
+      // FIXED: Update stock for all items (bills are typically for sales)
+      for (var item in items) {
+        final productName = item['name']?.toString().toLowerCase().trim() ?? '';
+        final quantity = int.tryParse(item['quantity'] ?? '0') ?? 0;
+
+        if (productName.isNotEmpty && quantity > 0) {
+          await _updateStock(productName, quantity, 'sale');
+        }
+      }
+
+      // FIXED: Save bill with proper linking support
       await FirebaseFirestore.instance.collection('bills').add({
         'user': user?.uid,
         'billNumber': finalBillNumber,
@@ -200,8 +254,10 @@ class _NewBillScreenState extends State<NewBillScreen> {
         'subtotal': subtotal,
         'tax': tax,
         'total': total,
+        'linkedTransactionId': linkedTransactionId, // NEW: Link to transaction if exists
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
+        'billType': 'manual', // NEW: Distinguish manual vs auto-generated bills
       });
 
       Fluttertoast.showToast(
@@ -402,7 +458,6 @@ class _ProductSelectionCardState extends State<_ProductSelectionCard> {
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             const SizedBox(height: 12),
-
             // Quantity controls
             Row(
               children: [
@@ -447,9 +502,7 @@ class _ProductSelectionCardState extends State<_ProductSelectionCard> {
                 ),
               ],
             ),
-
             const SizedBox(height: 12),
-
             // Price input
             TextField(
               controller: productPriceController,
@@ -460,9 +513,7 @@ class _ProductSelectionCardState extends State<_ProductSelectionCard> {
               ),
               keyboardType: TextInputType.number,
             ),
-
             const SizedBox(height: 16),
-
             // Add button
             SizedBox(
               width: double.infinity,

@@ -166,18 +166,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           child: ListView(
             children: [
               const SizedBox(height: 20),
-              _buildTextField(_nameController, "Name", Icons.person),
+              _buildTextField(_nameController, "Name", Icons.person, canChange: true,),
               _buildTextField(
                   _phoneController,
                   "Phone",
                   Icons.phone,
                   prefix: "+91 ",
                   keyboard: TextInputType.phone,
-                  maxLength: 10
+                  maxLength: 10,
+                  canChange: true
               ),
-              _buildTextField(_companyController, "Company Name", Icons.business),
-              _buildTextField(_addressController, "Company Address", Icons.location_on),
-              _buildTextField(_gstinController, "GSTIN", Icons.qr_code),
+              _buildTextField(_companyController, "Company Name", Icons.business,canChange: false),
+              _buildTextField(_addressController, "Company Address", Icons.location_on,canChange: false),
+              _buildTextField(_gstinController, "GSTIN", Icons.qr_code,canChange: false),
 
               const SizedBox(height: 30),
 
@@ -221,7 +222,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       IconData icon, {
         String? prefix,
         TextInputType keyboard = TextInputType.text,
-        int? maxLength
+        int? maxLength,
+        required bool canChange,
       }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),
@@ -236,6 +238,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           prefixIcon: Icon(icon),
           counterText: maxLength != null ? "" : null, // Hide counter for phone field
         ),
+        enabled: canChange,
         validator: (value) {
           if (value == null || value.trim().isEmpty) {
             return 'Please enter $label';

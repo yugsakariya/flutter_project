@@ -18,10 +18,12 @@ class _EditBillScreenState extends State<EditBillScreen> {
   final TextEditingController billNumberController = TextEditingController();
   DateTime selectedDate = DateTime.now();
   List<Map<String, dynamic>> items = [];
-  int quantity = 1;
   final user = FirebaseAuth.instance.currentUser;
   bool isLoading = true;
   String? billDocumentId;
+  String? originalCustomerName;
+  String? linkedTransactionId; // NEW: For transaction linking
+  List<Map<String, dynamic>> originalItems = []; // Track original items for stock reversal
 
   @override
   void initState() {
@@ -41,6 +43,8 @@ class _EditBillScreenState extends State<EditBillScreen> {
         final doc = querySnapshot.docs.first;
         final data = doc.data();
         billDocumentId = doc.id;
+        originalCustomerName = data['customerName'] ?? '';
+        linkedTransactionId = data['linkedTransactionId']; // NEW: Load linked transaction
 
         if (mounted) {
           setState(() {
@@ -51,6 +55,8 @@ class _EditBillScreenState extends State<EditBillScreen> {
             items = List<Map<String, dynamic>>.from(
                 (data['items'] as List?)?.map((item) => Map<String, dynamic>.from(item)) ?? []
             );
+            // Store original items for stock management
+            originalItems = List<Map<String, dynamic>>.from(items);
             isLoading = false;
           });
         }
@@ -96,7 +102,6 @@ class _EditBillScreenState extends State<EditBillScreen> {
     }
   }
 
-  // FIXED: Same approach as AddBill.dart - proper controller management
   void addItem() {
     showDialog(
       context: context,
@@ -125,7 +130,6 @@ class _EditBillScreenState extends State<EditBillScreen> {
                   itemBuilder: (context, index) {
                     final doc = snapshot.data!.docs[index];
                     final data = doc.data() as Map<String, dynamic>;
-
                     return _ProductSelectionCard(
                       productData: data,
                       onItemAdded: (item) {
@@ -151,10 +155,8 @@ class _EditBillScreenState extends State<EditBillScreen> {
     );
   }
 
-  // FIXED: Proper edit item dialog
   void editItem(int index) {
     final item = items[index];
-
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -190,6 +192,104 @@ class _EditBillScreenState extends State<EditBillScreen> {
     return subtotal;
   }
 
+  // FIXED: Centralized stock management
+  Future<void> _revertStockChange(String product, int quantity) async {
+    final stockQuery = await FirebaseFirestore.instance
+        .collection('stocks')
+        .where('user', isEqualTo: user!.uid)
+        .where('product', isEqualTo: product.toLowerCase().trim())
+        .limit(1)
+        .get();
+
+    if (stockQuery.docs.isNotEmpty) {
+      // Add back the quantity (reverse the sale)
+      await stockQuery.docs.first.reference.update({
+        'quantity': FieldValue.increment(quantity),
+        'sales': FieldValue.increment(-quantity),
+        'lastUpdated': DateTime.now(),
+      });
+    }
+  }
+
+  Future<void> _applyStockChange(String product, int quantity) async {
+    final stockQuery = await FirebaseFirestore.instance
+        .collection('stocks')
+        .where('user', isEqualTo: user!.uid)
+        .where('product', isEqualTo: product.toLowerCase().trim())
+        .limit(1)
+        .get();
+
+    if (stockQuery.docs.isNotEmpty) {
+      final stockData = stockQuery.docs.first.data();
+      final currentStock = stockData['quantity'] ?? 0;
+
+      if (currentStock < quantity) {
+        throw Exception("Insufficient stock! Available: $currentStock for $product");
+      }
+
+      // Subtract the quantity (apply the sale)
+      await stockQuery.docs.first.reference.update({
+        'quantity': FieldValue.increment(-quantity),
+        'sales': FieldValue.increment(quantity),
+        'lastUpdated': DateTime.now(),
+      });
+    } else {
+      throw Exception("Product not found in stock: $product");
+    }
+  }
+
+  // FIXED: Comprehensive transaction sync
+  Future<void> _updateLinkedTransaction() async {
+    if (linkedTransactionId == null) return;
+
+    try {
+      final transactionDoc = await FirebaseFirestore.instance
+          .collection('transactions')
+          .doc(linkedTransactionId)
+          .get();
+
+      if (!transactionDoc.exists) {
+        print('Linked transaction not found, removing link');
+        linkedTransactionId = null;
+        return;
+      }
+
+      // Convert bill items to transaction format
+      final List<Map<String, dynamic>> transactionProducts = [];
+      double totalAmount = 0.0;
+
+      for (var item in items) {
+        final quantity = int.tryParse(item['quantity'] ?? '0') ?? 0;
+        final price = double.tryParse(item['price'] ?? '0') ?? 0.0;
+
+        transactionProducts.add({
+          'product': item['name']?.toString().toLowerCase().trim() ?? '',
+          'quantity': quantity,
+          'unitPrice': price,
+        });
+
+        totalAmount += quantity * price;
+      }
+
+      // Update the linked transaction
+      await FirebaseFirestore.instance
+          .collection('transactions')
+          .doc(linkedTransactionId)
+          .update({
+        'product': transactionProducts,
+        'party': nameController.text.trim(),
+        'date': selectedDate,
+        'totalAmount': totalAmount,
+        'lastUpdated': DateTime.now(),
+      });
+
+      print('Successfully updated linked transaction: $linkedTransactionId');
+    } catch (e) {
+      print('Error updating linked transaction: $e');
+      // Don't throw error - bill update should still succeed
+    }
+  }
+
   Future<void> updateBill() async {
     if (nameController.text.isEmpty || items.isEmpty) {
       Fluttertoast.showToast(
@@ -210,10 +310,31 @@ class _EditBillScreenState extends State<EditBillScreen> {
     }
 
     try {
+      // FIXED: Revert original stock changes
+      for (var originalItem in originalItems) {
+        final productName = originalItem['name']?.toString().toLowerCase().trim() ?? '';
+        final quantity = int.tryParse(originalItem['quantity'] ?? '0') ?? 0;
+
+        if (productName.isNotEmpty && quantity > 0) {
+          await _revertStockChange(productName, quantity);
+        }
+      }
+
+      // Apply new stock changes
+      for (var item in items) {
+        final productName = item['name']?.toString().toLowerCase().trim() ?? '';
+        final quantity = int.tryParse(item['quantity'] ?? '0') ?? 0;
+
+        if (productName.isNotEmpty && quantity > 0) {
+          await _applyStockChange(productName, quantity);
+        }
+      }
+
       double subtotal = calculateSubtotal();
       double tax = subtotal * 0.05;
       double total = subtotal + tax;
 
+      // Update the bill
       await FirebaseFirestore.instance
           .collection('bills')
           .doc(billDocumentId)
@@ -227,6 +348,9 @@ class _EditBillScreenState extends State<EditBillScreen> {
         'total': total,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // FIXED: Update linked transaction if exists
+      await _updateLinkedTransaction();
 
       Fluttertoast.showToast(
         msg: 'Bill ${widget.billNumber} updated successfully!',
@@ -278,6 +402,32 @@ class _EditBillScreenState extends State<EditBillScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // NEW: Show transaction link status
+            if (linkedTransactionId != null)
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  border: Border.all(color: Colors.blue.shade200),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.link, color: Colors.blue.shade600, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'This bill is linked to a transaction',
+                        style: TextStyle(
+                          color: Colors.blue.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 16),
             const Text('CUSTOMER DETAILS', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
@@ -381,7 +531,8 @@ class _EditBillScreenState extends State<EditBillScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text("Total:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text("₹${total.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text("₹${total.toStringAsFixed(2)}",
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 20),
@@ -410,7 +561,7 @@ class _EditBillScreenState extends State<EditBillScreen> {
   }
 }
 
-// FIXED: Separate StatefulWidget for Product Selection Card (same as AddBill.dart)
+// Product Selection Card and Edit Item Dialog remain the same as before...
 class _ProductSelectionCard extends StatefulWidget {
   final Map<String, dynamic> productData;
   final Function(Map<String, dynamic>) onItemAdded;
@@ -454,8 +605,6 @@ class _ProductSelectionCardState extends State<_ProductSelectionCard> {
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             const SizedBox(height: 12),
-
-            // Quantity controls
             Row(
               children: [
                 const Text('Quantity: ', style: TextStyle(fontWeight: FontWeight.w500)),
@@ -499,10 +648,7 @@ class _ProductSelectionCardState extends State<_ProductSelectionCard> {
                 ),
               ],
             ),
-
             const SizedBox(height: 12),
-
-            // Price input
             TextField(
               controller: productPriceController,
               decoration: const InputDecoration(
@@ -512,10 +658,7 @@ class _ProductSelectionCardState extends State<_ProductSelectionCard> {
               ),
               keyboardType: TextInputType.number,
             ),
-
             const SizedBox(height: 16),
-
-            // Add button
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -549,7 +692,6 @@ class _ProductSelectionCardState extends State<_ProductSelectionCard> {
   }
 }
 
-// FIXED: Separate StatefulWidget for Edit Item Dialog
 class _EditItemDialog extends StatefulWidget {
   final Map<String, dynamic> initialItem;
   final Function(Map<String, dynamic>) onItemUpdated;
@@ -585,7 +727,6 @@ class _EditItemDialogState extends State<_EditItemDialog> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Quantity controls
         Row(
           children: [
             const Text('Quantity: ', style: TextStyle(fontWeight: FontWeight.w500)),
@@ -629,10 +770,7 @@ class _EditItemDialogState extends State<_EditItemDialog> {
             ),
           ],
         ),
-
         const SizedBox(height: 16),
-
-        // Price input
         TextField(
           controller: editPriceController,
           decoration: const InputDecoration(
@@ -642,10 +780,7 @@ class _EditItemDialogState extends State<_EditItemDialog> {
           ),
           keyboardType: TextInputType.number,
         ),
-
         const SizedBox(height: 20),
-
-        // Update button
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(

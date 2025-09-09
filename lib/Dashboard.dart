@@ -34,20 +34,21 @@ class _DashboardState extends State<Dashboard> {
     return await showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Text('Exit App'),
-        content: Text('Are you sure you want to exit?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text('No'),
+      builder: (context) =>
+          AlertDialog(
+            title: Text('Exit App'),
+            content: Text('Are you sure you want to exit?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text('No'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: Text('Yes'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text('Yes'),
-          ),
-        ],
-      ),
     ) ?? false;
   }
 
@@ -121,38 +122,40 @@ class _DashboardState extends State<Dashboard> {
     return await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Text('Storage Permission Needed'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('This app needs storage permission to:'),
-            SizedBox(height: 8),
-            Text('• Save PDF reports to your device'),
-            Text('• Allow you to access generated reports'),
-            SizedBox(height: 12),
-            Text('Please allow storage access in the next dialog.'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text('Cancel'),
+      builder: (context) =>
+          AlertDialog(
+            title: Text('Storage Permission Needed'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('This app needs storage permission to:'),
+                SizedBox(height: 8),
+                Text('• Save PDF reports to your device'),
+                Text('• Allow you to access generated reports'),
+                SizedBox(height: 12),
+                Text('Please allow storage access in the next dialog.'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: Text('Continue'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text('Continue'),
-          ),
-        ],
-      ),
     ) ?? false;
   }
 
   void _showPermissionGrantedMessage() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Storage permission granted! You can now generate PDF reports.'),
+        content: Text(
+            'Storage permission granted! You can now generate PDF reports.'),
         backgroundColor: Colors.green,
         duration: Duration(seconds: 2),
       ),
@@ -163,26 +166,27 @@ class _DashboardState extends State<Dashboard> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Text('Permission Denied'),
-        content: Text(
-          'Storage permission was denied. PDF reports cannot be saved without this permission.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel'),
+      builder: (context) =>
+          AlertDialog(
+            title: Text('Permission Denied'),
+            content: Text(
+              'Storage permission was denied. PDF reports cannot be saved without this permission.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  // Try requesting permission again
+                  await _checkAndRequestStoragePermission();
+                },
+                child: Text('Try Again'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              // Try requesting permission again
-              await _checkAndRequestStoragePermission();
-            },
-            child: Text('Try Again'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -190,51 +194,55 @@ class _DashboardState extends State<Dashboard> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Text('Permission Required'),
-        content: Text(
-          'Storage permission has been permanently denied. Please enable it manually in app settings to generate PDF reports.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              await openAppSettings();
+      builder: (context) =>
+          AlertDialog(
+            title: Text('Permission Required'),
+            content: Text(
+              'Storage permission has been permanently denied. Please enable it manually in app settings to generate PDF reports.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  await openAppSettings();
 
-              // Check permission again after user returns from settings
-              Future.delayed(Duration(seconds: 1), () async {
-                final hasPermission = await _checkAndRequestStoragePermission();
-                if (hasPermission) {
-                  _showPermissionGrantedMessage();
-                }
-              });
-            },
-            child: Text('Open Settings'),
+                  // Check permission again after user returns from settings
+                  Future.delayed(Duration(seconds: 1), () async {
+                    final hasPermission = await _checkAndRequestStoragePermission();
+                    if (hasPermission) {
+                      _showPermissionGrantedMessage();
+                    }
+                  });
+                },
+                child: Text('Open Settings'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   void _showPermissionErrorDialog(String error) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Permission Error'),
-        content: Text('An error occurred while requesting storage permission:\n$error'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('OK'),
+      builder: (context) =>
+          AlertDialog(
+            title: Text('Permission Error'),
+            content: Text(
+                'An error occurred while requesting storage permission:\n$error'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text('OK'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
+
   void _showReportFilterDialog(BuildContext context) async {
     DateTime? fromDate;
     DateTime? toDate;
@@ -249,7 +257,8 @@ class _DashboardState extends State<Dashboard> {
           .collection("stocks")
           .where("user", isEqualTo: user.uid)
           .get();
-      products = stockSnapshot.docs.map((doc) => doc['product'].toString()).toList();
+      products =
+          stockSnapshot.docs.map((doc) => doc['product'].toString()).toList();
       // Initially select all products
       selectedProducts = List.from(products);
       print("Found ${products.length} products");
@@ -263,167 +272,181 @@ class _DashboardState extends State<Dashboard> {
         return AlertDialog(
           title: Text("Generate PDF Report"),
           content: StatefulBuilder(
-            builder: (context, setState) => Container(
-              width: double.maxFinite,
-              height: MediaQuery.of(context).size.height * 0.6, // 60% of screen height
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // From Date Picker
-                    ListTile(
-                      title: Text(fromDate == null
-                          ? "Select From Date"
-                          : "From: ${fromDate!.day}/${fromDate!.month}/${fromDate!.year}"),
-                      trailing: Icon(Icons.calendar_today),
-                      onTap: () async {
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.now(),
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2100),
-                        );
-                        if (picked != null) setState(() => fromDate = picked);
-                      },
-                    ),
-
-                    // To Date Picker
-                    ListTile(
-                      title: Text(toDate == null
-                          ? "Select To Date"
-                          : "To: ${toDate!.day}/${toDate!.month}/${toDate!.year}"),
-                      trailing: Icon(Icons.calendar_today),
-                      onTap: () async {
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.now(),
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2100),
-                        );
-                        if (picked != null) setState(() => toDate = picked);
-                      },
-                    ),
-
-                    SizedBox(height: 16),
-
-                    // Product Selection Section
-                    Text(
-                      'Select Products:',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 8),
-
-                    // All Products Checkbox
-                    CheckboxListTile(
-                      title: Text(
-                        'All Products',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.indigo,
-                        ),
-                      ),
-                      value: allProductsSelected,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          allProductsSelected = value ?? false;
-                          if (allProductsSelected) {
-                            selectedProducts = List.from(products);
-                          } else {
-                            selectedProducts.clear();
-                          }
-                        });
-                      },
-                      controlAffinity: ListTileControlAffinity.leading,
-                    ),
-
-                    Divider(),
-
-                    // Individual Product Checkboxes (Scrollable)
-                    Container(
-                      height: 200, // Fixed height for scrollable area
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: products.isEmpty
-                          ? Center(
-                        child: Text(
-                          'No products found',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      )
-                          : ListView.builder(
-                        itemCount: products.length,
-                        itemBuilder: (context, index) {
-                          final product = products[index];
-                          return CheckboxListTile(
-                            title: Text(product),
-                            value: selectedProducts.contains(product),
-                            onChanged: (bool? value) {
-                              setState(() {
-                                if (value == true) {
-                                  if (!selectedProducts.contains(product)) {
-                                    selectedProducts.add(product);
-                                  }
-                                } else {
-                                  selectedProducts.remove(product);
-                                }
-
-                                // Update "All Products" checkbox state
-                                allProductsSelected = selectedProducts.length == products.length;
-                              });
-                            },
-                            controlAffinity: ListTileControlAffinity.leading,
-                            dense: true,
-                          );
-                        },
-                      ),
-                    ),
-
-                    SizedBox(height: 16),
-
-                    // Selected count display
-                    Text(
-                      'Selected: ${selectedProducts.length} of ${products.length} products',
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 12,
-                      ),
-                    ),
-
-                    SizedBox(height: 16),
-
-                    // Type dropdown
-                    Row(
+            builder: (context, setState) =>
+                Container(
+                  width: double.maxFinite,
+                  height: MediaQuery
+                      .of(context)
+                      .size
+                      .height * 0.6, // 60% of screen height
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text("Transaction Type: "),
-                        SizedBox(width: 16),
-                        Expanded(
-                          child: DropdownButton<String>(
-                            value: type,
-                            isExpanded: true,
-                            items: [
-                              DropdownMenuItem(value: "Purchase", child: Text("Purchase")),
-                              DropdownMenuItem(value: "Sale", child: Text("Sale")),
-                              DropdownMenuItem(value: "Both", child: Text("Both")),
-                            ],
-                            onChanged: (val) {
-                              setState(() {
-                                if (val != null) type = val;
-                              });
+                        // From Date Picker
+                        ListTile(
+                          title: Text(fromDate == null
+                              ? "Select From Date"
+                              : "From: ${fromDate!.day}/${fromDate!
+                              .month}/${fromDate!.year}"),
+                          trailing: Icon(Icons.calendar_today),
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: DateTime.now(),
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2100),
+                            );
+                            if (picked != null) setState(() =>
+                            fromDate = picked);
+                          },
+                        ),
+
+                        // To Date Picker
+                        ListTile(
+                          title: Text(toDate == null
+                              ? "Select To Date"
+                              : "To: ${toDate!.day}/${toDate!.month}/${toDate!
+                              .year}"),
+                          trailing: Icon(Icons.calendar_today),
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: DateTime.now(),
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2100),
+                            );
+                            if (picked != null) setState(() => toDate = picked);
+                          },
+                        ),
+
+                        SizedBox(height: 16),
+
+                        // Product Selection Section
+                        Text(
+                          'Select Products:',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+
+                        // All Products Checkbox
+                        CheckboxListTile(
+                          title: Text(
+                            'All Products',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.indigo,
+                            ),
+                          ),
+                          value: allProductsSelected,
+                          onChanged: (bool? value) {
+                            setState(() {
+                              allProductsSelected = value ?? false;
+                              if (allProductsSelected) {
+                                selectedProducts = List.from(products);
+                              } else {
+                                selectedProducts.clear();
+                              }
+                            });
+                          },
+                          controlAffinity: ListTileControlAffinity.leading,
+                        ),
+
+                        Divider(),
+
+                        // Individual Product Checkboxes (Scrollable)
+                        Container(
+                          height: 200, // Fixed height for scrollable area
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: products.isEmpty
+                              ? Center(
+                            child: Text(
+                              'No products found',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          )
+                              : ListView.builder(
+                            itemCount: products.length,
+                            itemBuilder: (context, index) {
+                              final product = products[index];
+                              return CheckboxListTile(
+                                title: Text(product),
+                                value: selectedProducts.contains(product),
+                                onChanged: (bool? value) {
+                                  setState(() {
+                                    if (value == true) {
+                                      if (!selectedProducts.contains(product)) {
+                                        selectedProducts.add(product);
+                                      }
+                                    } else {
+                                      selectedProducts.remove(product);
+                                    }
+
+                                    // Update "All Products" checkbox state
+                                    allProductsSelected =
+                                        selectedProducts.length ==
+                                            products.length;
+                                  });
+                                },
+                                controlAffinity: ListTileControlAffinity
+                                    .leading,
+                                dense: true,
+                              );
                             },
                           ),
                         ),
+
+                        SizedBox(height: 16),
+
+                        // Selected count display
+                        Text(
+                          'Selected: ${selectedProducts.length} of ${products
+                              .length} products',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 12,
+                          ),
+                        ),
+
+                        SizedBox(height: 16),
+
+                        // Type dropdown
+                        Row(
+                          children: [
+                            Text("Transaction Type: "),
+                            SizedBox(width: 16),
+                            Expanded(
+                              child: DropdownButton<String>(
+                                value: type,
+                                isExpanded: true,
+                                items: [
+                                  DropdownMenuItem(value: "Purchase",
+                                      child: Text("Purchase")),
+                                  DropdownMenuItem(
+                                      value: "Sale", child: Text("Sale")),
+                                  DropdownMenuItem(
+                                      value: "Both", child: Text("Both")),
+                                ],
+                                onChanged: (val) {
+                                  setState(() {
+                                    if (val != null) type = val;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
           ),
           actions: [
             TextButton(
@@ -438,7 +461,8 @@ class _DashboardState extends State<Dashboard> {
                       toastLength: Toast.LENGTH_SHORT,
                       gravity: ToastGravity.BOTTOM,
                       timeInSecForIosWeb: 2,
-                      backgroundColor: Colors.red,        // Or your preferred color
+                      backgroundColor: Colors.red,
+                      // Or your preferred color
                       textColor: Colors.white,
                       fontSize: 16.0
                   );
@@ -452,7 +476,8 @@ class _DashboardState extends State<Dashboard> {
                       toastLength: Toast.LENGTH_SHORT,
                       gravity: ToastGravity.BOTTOM,
                       timeInSecForIosWeb: 2,
-                      backgroundColor: Colors.red,        // Or your preferred color
+                      backgroundColor: Colors.red,
+                      // Or your preferred color
                       textColor: Colors.white,
                       fontSize: 16.0
                   );
@@ -482,7 +507,8 @@ class _DashboardState extends State<Dashboard> {
     required String type,
     List<String>? selectedProducts,
   }) async {
-    print("Starting PDF generation process with from: $from, to: $to type: $type products: $selectedProducts");
+    print(
+        "Starting PDF generation process with from: $from, to: $to type: $type products: $selectedProducts");
 
     // 1. Check permission FIRST
     bool hasPermission = await _checkAndRequestStoragePermission();
@@ -492,7 +518,8 @@ class _DashboardState extends State<Dashboard> {
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
           timeInSecForIosWeb: 2,
-          backgroundColor: Colors.red,        // Or your preferred color
+          backgroundColor: Colors.red,
+          // Or your preferred color
           textColor: Colors.white,
           fontSize: 16.0
       );
@@ -504,16 +531,17 @@ class _DashboardState extends State<Dashboard> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 20),
-            Text("Generating PDF report..."),
-          ],
-        ),
-      ),
+      builder: (context) =>
+          AlertDialog(
+            content: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 20),
+                Text("Generating PDF report..."),
+              ],
+            ),
+          ),
     );
 
     try {
@@ -534,7 +562,8 @@ class _DashboardState extends State<Dashboard> {
             toastLength: Toast.LENGTH_SHORT,
             gravity: ToastGravity.BOTTOM,
             timeInSecForIosWeb: 2,
-            backgroundColor: Colors.red,        // Or your preferred color
+            backgroundColor: Colors.red,
+            // Or your preferred color
             textColor: Colors.white,
             fontSize: 16.0
         );
@@ -566,7 +595,8 @@ class _DashboardState extends State<Dashboard> {
             toastLength: Toast.LENGTH_SHORT,
             gravity: ToastGravity.BOTTOM,
             timeInSecForIosWeb: 2,
-            backgroundColor: Colors.red,        // Or your preferred color
+            backgroundColor: Colors.red,
+            // Or your preferred color
             textColor: Colors.white,
             fontSize: 16.0
         );
@@ -618,8 +648,6 @@ class _DashboardState extends State<Dashboard> {
 
       final openResult = await OpenFile.open(pdfPath);
       print("OpenFile.open result: ${openResult.type}");
-
-
     } catch (e, stack) {
       print("Error in PDF export: $e $stack");
       if (Navigator.canPop(context)) Navigator.pop(context);
@@ -628,11 +656,11 @@ class _DashboardState extends State<Dashboard> {
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
           timeInSecForIosWeb: 2,
-          backgroundColor: Colors.red,        // Or your preferred color
+          backgroundColor: Colors.red,
+          // Or your preferred color
           textColor: Colors.white,
           fontSize: 16.0
       );
-
     }
   }
 
@@ -645,11 +673,11 @@ class _DashboardState extends State<Dashboard> {
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
           timeInSecForIosWeb: 2,
-          backgroundColor: Colors.red,        // Or your preferred color
+          backgroundColor: Colors.red,
+          // Or your preferred color
           textColor: Colors.white,
           fontSize: 16.0
       );
-
     }
   }
 
@@ -666,7 +694,7 @@ class _DashboardState extends State<Dashboard> {
           titleTextStyle: TextStyle(fontSize: 22, color: Colors.white),
           actions: [
             IconButton(
-              icon: Icon(Icons.report, color: Colors.white),
+              icon: Icon(Icons.description, color: Colors.white),
               tooltip: "Generate Report",
               onPressed: () {
                 _showReportFilterDialog(context);
@@ -675,23 +703,27 @@ class _DashboardState extends State<Dashboard> {
             IconButton(
               icon: Icon(Icons.account_circle, size: 28, color: Colors.white),
               tooltip: 'Profile',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => Profile()),
-              ),
+              onPressed: () =>
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => Profile()),
+                  ),
             ),
             PopupMenuButton(
               onSelected: (value) {
                 if (value == 'logout') _logout();
               },
-              itemBuilder: (context) => [
+              itemBuilder: (context) =>
+              [
                 PopupMenuItem(
                   enabled: false,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Logged in as:', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                      Text(user.email ?? 'Unknown', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+                      Text('Logged in as:', style: TextStyle(
+                          fontSize: 12, color: Colors.grey[600])),
+                      Text(user.email ?? 'Unknown', style: TextStyle(
+                          fontWeight: FontWeight.bold, color: Colors.black)),
                       Divider(),
                     ],
                   ),
@@ -764,21 +796,118 @@ class _DashboardState extends State<Dashboard> {
         }
 
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return Center(child: Text('No transactions found'));
+          return Center(
+            child: Column(
+              children: [
+                Icon(Icons.receipt_long, color: Colors.grey, size: 48),
+                SizedBox(height: 8),
+                Text('No recent transactions found'),
+              ],
+            ),
+          );
         }
 
-        final transactions = snapshot.data!.docs.map((doc) => {
-          "title": _capitalizeFirstLetter(doc['product'] ?? 'Unknown Product'),
-          "amount": "₹${doc['unitPrice'] ?? '0'}",
-          "timestamp": (doc['timestamp'] != null && doc['timestamp'] is Timestamp)
-              ? DateFormat('dd-MM-yyyy').format(doc['timestamp'].toDate())
-              : 'No Date'
+        final transactions = snapshot.data!.docs.map((doc) {
+          try {
+            final data = doc.data();
+            if (data == null) {
+              return {
+                "title": "Error: No data",
+                "amount": "₹0.00",
+                "timestamp": "No Date",
+                "type": "Unknown",
+              };
+            }
+
+            final dataMap = Map<String, dynamic>.from(data as Map);
+
+            // Safely get the first product name from the product array
+            String productName = _getFirstProductNameFromData(dataMap);
+
+            // Safely calculate total amount from all products in the array
+            double totalAmount = _getTotalAmountFromData(dataMap);
+
+            // Safely get transaction type
+            final type = dataMap['type']?.toString() ?? 'Unknown';
+
+            // Safely get date
+            String dateString = "No Date";
+            try {
+              final timestampField = dataMap['timestamp'];
+              if (timestampField != null && timestampField is Timestamp) {
+                dateString =
+                    DateFormat('dd-MM-yyyy').format(timestampField.toDate());
+              }
+            } catch (e) {
+              print("Error parsing timestamp: $e");
+            }
+
+            return {
+              "title": productName,
+              "amount": "₹${totalAmount.toStringAsFixed(2)}",
+              "timestamp": dateString,
+              "type": type,
+            };
+          } catch (e) {
+            print("Error processing transaction doc: $e");
+            return {
+              "title": "Error loading transaction",
+              "amount": "₹0.00",
+              "timestamp": "No Date",
+              "type": "Unknown",
+            };
+          }
         }).toList();
 
         return _buildRecentList(transactions);
       },
     );
   }
+
+// Helper method to safely get the first product name from product array
+  String _getFirstProductNameFromData(Map<String, dynamic> data) {
+    try {
+      final product = data['product'] as List<dynamic>? ?? [];
+
+      if (product.isNotEmpty && product[0] != null) {
+        final firstProduct = Map<String, dynamic>.from(product[0] as Map);
+        final productName = firstProduct['product']?.toString() ??
+            'Unknown Product';
+
+        // If there are multiple products, show count
+        if (product.length > 1) {
+          return "$productName (+${product.length - 1} more)";
+        }
+        return productName;
+      }
+      return 'No Products';
+    } catch (e) {
+      print("Error getting first product name: $e");
+      return 'Error Loading Product';
+    }
+  }
+
+// Helper method to safely calculate total amount from product array
+  double _getTotalAmountFromData(Map<String, dynamic> data) {
+    try {
+      final product = data['product'] as List<dynamic>? ?? [];
+
+      double totalAmount = 0.0;
+      for (var item in product) {
+        if (item != null) {
+          final itemMap = Map<String, dynamic>.from(item as Map);
+          final quantity = (itemMap['quantity'] as num?)?.toInt() ?? 0;
+          final unitPrice = (itemMap['unitPrice'] as num?)?.toDouble() ?? 0.0;
+          totalAmount += quantity * unitPrice;
+        }
+      }
+      return totalAmount;
+    } catch (e) {
+      print("Error calculating total amount: $e");
+      return 0.0;
+    }
+  }
+
 
   Widget _buildLowStockCard() {
     return Expanded(
@@ -789,26 +918,33 @@ class _DashboardState extends State<Dashboard> {
             .where("user", isEqualTo: user.uid)
             .snapshots(),
         builder: (context, snapshot) {
-          final lowStockCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+          final lowStockCount = snapshot.hasData
+              ? snapshot.data!.docs.length
+              : 0;
           return GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const LowStocks()),
-            ),
+            onTap: () =>
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LowStocks()),
+                ),
             child: Card(
               elevation: 3,
               margin: EdgeInsets.all(8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 20, horizontal: 12),
                 child: Column(
                   children: [
                     Icon(Icons.warning, color: Colors.redAccent, size: 30),
                     SizedBox(height: 10),
-                    Text("Low Stock", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    Text("Low Stock", style: TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600)),
                     SizedBox(height: 6),
                     Text(lowStockCount.toString(),
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                        style: TextStyle(fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.redAccent)),
                   ],
                 ),
               ),
@@ -827,26 +963,34 @@ class _DashboardState extends State<Dashboard> {
             .where("user", isEqualTo: user.uid)
             .snapshots(),
         builder: (context, snapshot) {
-          final supplierCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+          final supplierCount = snapshot.hasData
+              ? snapshot.data!.docs.length
+              : 0;
           return GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const SupplierScreen()),
-            ),
+            onTap: () =>
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const SupplierScreen()),
+                ),
             child: Card(
               elevation: 3,
               margin: EdgeInsets.all(8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 20, horizontal: 12),
                 child: Column(
                   children: [
                     Icon(Icons.local_shipping, color: Colors.orange, size: 30),
                     SizedBox(height: 10),
-                    Text("Suppliers", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    Text("Suppliers", style: TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600)),
                     SizedBox(height: 6),
                     Text(supplierCount.toString(),
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.orange)),
+                        style: TextStyle(fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange)),
                   ],
                 ),
               ),
@@ -865,26 +1009,34 @@ class _DashboardState extends State<Dashboard> {
             .where("user", isEqualTo: user.uid)
             .snapshots(),
         builder: (context, snapshot) {
-          final customerCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+          final customerCount = snapshot.hasData
+              ? snapshot.data!.docs.length
+              : 0;
           return GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const CustomerScreen()),
-            ),
+            onTap: () =>
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const CustomerScreen()),
+                ),
             child: Card(
               elevation: 3,
               margin: EdgeInsets.all(8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 20, horizontal: 12),
                 child: Column(
                   children: [
                     Icon(Icons.account_circle, color: Colors.green, size: 30),
                     SizedBox(height: 10),
-                    Text("Customer", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    Text("Customer", style: TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600)),
                     SizedBox(height: 6),
                     Text(customerCount.toString(),
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
+                        style: TextStyle(fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green)),
                   ],
                 ),
               ),
@@ -898,25 +1050,32 @@ class _DashboardState extends State<Dashboard> {
   Widget _buildStockCard() {
     return Expanded(
       child: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection("stocks").where("user", isEqualTo: user.uid).snapshots(),
+        stream: FirebaseFirestore.instance.collection("stocks").where(
+            "user", isEqualTo: user.uid).snapshots(),
         builder: (context, snapshot) {
-          final totalStockCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+          final totalStockCount = snapshot.hasData
+              ? snapshot.data!.docs.length
+              : 0;
           return GestureDetector(
             onTap: () => widget.onTabChange?.call(1),
             child: Card(
               elevation: 3,
               margin: EdgeInsets.all(8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 20, horizontal: 12),
                 child: Column(
                   children: [
                     Icon(Icons.shopping_cart, color: Colors.indigo, size: 30),
                     SizedBox(height: 10),
-                    Text("Stock", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                    Text("Stock", style: TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600)),
                     SizedBox(height: 6),
                     Text(totalStockCount.toString(),
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo)),
+                        style: TextStyle(fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.indigo)),
                   ],
                 ),
               ),
@@ -930,26 +1089,53 @@ class _DashboardState extends State<Dashboard> {
   Widget _buildSectionTitle(String title) {
     return Align(
       alignment: Alignment.centerLeft,
-      child: Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+      child: Text(
+          title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
     );
   }
 
-  Widget _buildRecentList(List<Map<String, String>> items) {
+  Widget _buildRecentList(List<Map<String, dynamic>> items) {
     return Column(
-      children: items.map((item) => Card(
-        margin: EdgeInsets.symmetric(vertical: 6),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: ListTile(
-          title: Text(item['title'] ?? ""),
-          subtitle: Text(item['timestamp'] ?? ""),
-          trailing: Text(item['amount'] ?? "", style: TextStyle(fontWeight: FontWeight.bold)),
-        ),
-      )).toList(),
-    );
-  }
+      children: items.map((item) {
+        final isPurchase = item['type'] == 'Purchase';
 
-  String _capitalizeFirstLetter(String text) {
-    if (text.isEmpty) return text;
-    return text[0].toUpperCase() + text.substring(1).toLowerCase();
+        return Card(
+          margin: EdgeInsets.symmetric(vertical: 6),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+          elevation: 2,
+          child: ListTile(
+            leading: Container(
+              padding: EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: isPurchase ? Colors.green.shade100 : Colors.red.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                isPurchase ? Icons.trending_up : Icons.trending_down,
+                color: isPurchase ? Colors.green.shade700 : Colors.red.shade700,
+                size: 16,
+              ),
+            ),
+            title: Text(
+              item['title'] ?? "",
+              style: TextStyle(fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              item['timestamp'] ?? "",
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+            trailing: Text(
+              item['amount'] ?? "",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isPurchase ? Colors.green.shade700 : Colors.red.shade700,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
   }
 }
