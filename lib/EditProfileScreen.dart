@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'Profile.dart'; // Import Profile screen
+import 'Profile.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -18,9 +18,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _companyController = TextEditingController();
   final _addressController = TextEditingController();
   final _gstinController = TextEditingController();
+
   final user = FirebaseAuth.instance.currentUser!;
-  bool _newProfile = false;
-  bool _isLoading = false;
+  bool _newProfile = true;
+  bool _isLoading = true;
+  String? _existingDocId;
 
   @override
   void initState() {
@@ -30,7 +32,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   void dispose() {
-    // Clean up controllers to prevent memory leaks
     _nameController.dispose();
     _phoneController.dispose();
     _companyController.dispose();
@@ -40,47 +41,50 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _loadProfileData() async {
-    setState(() => _isLoading = true);
-
     try {
-      final doc = await FirebaseFirestore.instance
+      final querySnapshot = await FirebaseFirestore.instance
           .collection('profile')
           .where('user', isEqualTo: user.uid)
-          .limit(1)
           .get();
 
-      if (doc.docs.isEmpty) {
-        _newProfile = true;
-      } else {
-        final data = doc.docs.first.data();
+      if (querySnapshot.docs.isEmpty) {
+        // No profile exists
         setState(() {
+          _newProfile = true;
+          _isLoading = false;
+        });
+      } else {
+        // Profile exists
+        final doc = querySnapshot.docs.first;
+        final data = doc.data();
+        _existingDocId = doc.id;
+
+        setState(() {
+          _newProfile = false;
           _nameController.text = data['name'] ?? '';
           _phoneController.text = data['phone'] ?? '';
           _companyController.text = data['company'] ?? '';
           _addressController.text = data['address'] ?? '';
           _gstinController.text = data['gstin'] ?? '';
+          _isLoading = false;
         });
       }
     } catch (e) {
-      print('Error loading profile data: $e');
-      if (mounted) {
-        Fluttertoast.showToast(msg: "Error loading profile data");
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      setState(() {
+        _newProfile = true;
+        _isLoading = false;
+      });
     }
   }
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
+
     setState(() => _isLoading = true);
 
     try {
       if (_newProfile) {
-        // Add new profile
-        await FirebaseFirestore.instance.collection("profile").add({
+        await FirebaseFirestore.instance.collection('profile').add({
           'user': user.uid,
           'name': _nameController.text.trim(),
           'phone': _phoneController.text.trim(),
@@ -92,15 +96,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           'updatedAt': FieldValue.serverTimestamp(),
         });
       } else {
-        // Update existing profile
-        final docs = await FirebaseFirestore.instance
-            .collection('profile')
-            .where('user', isEqualTo: user.uid)
-            .limit(1)
-            .get();
-
-        if (docs.docs.isNotEmpty) {
-          await docs.docs.first.reference.update({
+        if (_existingDocId != null) {
+          await FirebaseFirestore.instance
+              .collection('profile')
+              .doc(_existingDocId)
+              .update({
             'name': _nameController.text.trim(),
             'phone': _phoneController.text.trim(),
             'company': _companyController.text.trim(),
@@ -111,29 +111,26 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         }
       }
 
-      if (mounted) {
-        Fluttertoast.showToast(msg: "Profile updated successfully");
+      Fluttertoast.showToast(
+        msg: _newProfile ? 'Profile created successfully!' : 'Profile updated successfully!',
+        backgroundColor: Colors.green,
+      );
 
-        if (_newProfile) {
-          // For new profile, replace current screen with Profile screen
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const Profile()),
-          );
-        } else {
-          // For existing profile update, go back with success indicator
-          Navigator.pop(context, true);
-        }
+      if (_newProfile) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const Profile()),
+        );
+      } else {
+        Navigator.pop(context, true);
       }
     } catch (e) {
-      print('Error saving profile: $e');
-      if (mounted) {
-        Fluttertoast.showToast(msg: "Error saving profile: $e");
-      }
+      Fluttertoast.showToast(
+        msg: 'Error saving profile: $e',
+        backgroundColor: Colors.red,
+      );
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      setState(() => _isLoading = false);
     }
   }
 
@@ -141,44 +138,61 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_newProfile ? 'Create Profile' : 'Edit Profile'), // Dynamic title
-        titleTextStyle: const TextStyle(
-          fontSize: 22,
-          color: Colors.white,
-        ),
+        title: Text(_newProfile ? 'Create Profile' : 'Edit Profile'),
+        titleTextStyle: const TextStyle(fontSize: 22, color: Colors.white),
         centerTitle: true,
         backgroundColor: Colors.indigo,
         iconTheme: const IconThemeData(color: Colors.white),
         foregroundColor: Colors.white,
-        // Hide back button for new profile creation
         automaticallyImplyLeading: !_newProfile,
       ),
       body: _isLoading
           ? const Center(
         child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(Colors.indigo),
+          valueColor: AlwaysStoppedAnimation(Colors.indigo),
         ),
       )
-          : Padding(
+          : SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Form(
           key: _formKey,
-          child: ListView(
+          child: Column(
             children: [
               const SizedBox(height: 20),
-              _buildTextField(_nameController, "Name", Icons.person, canChange: true,),
+
+              // NAME - Always editable
+              _buildTextField(_nameController, "Name", Icons.person),
+
+              // PHONE - Always editable
               _buildTextField(
-                  _phoneController,
-                  "Phone",
-                  Icons.phone,
-                  prefix: "+91 ",
-                  keyboard: TextInputType.phone,
-                  maxLength: 10,
-                  canChange: true
+                _phoneController,
+                "Phone",
+                Icons.phone,
+                prefix: "+91 ",
+                keyboard: TextInputType.phone,
+                maxLength: 10,
               ),
-              _buildTextField(_companyController, "Company Name", Icons.business,canChange: false),
-              _buildTextField(_addressController, "Company Address", Icons.location_on,canChange: false),
-              _buildTextField(_gstinController, "GSTIN", Icons.qr_code,canChange: false),
+
+              // COMPANY - Always editable
+              _buildTextField(
+                _companyController,
+                "Company Name",
+                Icons.business,
+              ),
+
+              // ADDRESS - Always editable
+              _buildTextField(
+                _addressController,
+                "Company Address",
+                Icons.location_on,
+              ),
+
+              // GSTIN - Always editable
+              _buildTextField(
+                _gstinController,
+                "GSTIN",
+                Icons.qr_code,
+              ),
 
               const SizedBox(height: 30),
 
@@ -195,14 +209,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       strokeWidth: 2,
                     ),
                   )
-                      : const Icon(Icons.save, color: Colors.white),
+                      : Icon(_newProfile ? Icons.add : Icons.save, color: Colors.white),
                   label: Text(
-                    _isLoading ? "Saving..." : "Save",
-                    style: const TextStyle(color: Colors.white),
+                    _isLoading
+                        ? "Saving..."
+                        : _newProfile
+                        ? "Create Profile"
+                        : "Update Profile",
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.indigo,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -223,7 +241,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         String? prefix,
         TextInputType keyboard = TextInputType.text,
         int? maxLength,
-        required bool canChange,
       }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),
@@ -235,20 +252,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           labelText: label,
           prefixText: prefix,
           border: const OutlineInputBorder(),
-          prefixIcon: Icon(icon),
-          counterText: maxLength != null ? "" : null, // Hide counter for phone field
+          prefixIcon: Icon(icon, color: Colors.indigo),
+          counterText: maxLength != null ? "" : null,
+          filled: true,
+          fillColor: Colors.white,
         ),
-        enabled: canChange,
         validator: (value) {
           if (value == null || value.trim().isEmpty) {
             return 'Please enter $label';
           }
-
-          // Additional validation for phone number
           if (label == "Phone" && value.trim().length != 10) {
             return 'Please enter a valid 10-digit phone number';
           }
-
           return null;
         },
       ),

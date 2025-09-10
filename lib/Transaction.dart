@@ -1,10 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_project/TransactionAdd.dart';
-import 'package:flutter_project/TransactionUpdate.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
+import 'utils.dart';
+import 'TransactionAdd.dart';
+import 'TransactionUpdate.dart';
 
 class TransactionScreen extends StatefulWidget {
   final VoidCallback? goToDashboard;
@@ -15,7 +15,6 @@ class TransactionScreen extends StatefulWidget {
 }
 
 class _TransactionScreenState extends State<TransactionScreen> {
-  final User? user = FirebaseAuth.instance.currentUser;
   final _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -25,82 +24,46 @@ class _TransactionScreenState extends State<TransactionScreen> {
     super.dispose();
   }
 
-  // APPROACH 1: Server-side filtering with array-contains
-  Stream<QuerySnapshot> _getTransactionStream() {
+  Stream<QuerySnapshot> _getTransactionsStream() {
+    final user = FirebaseAuth.instance.currentUser;
     if (user == null) return const Stream.empty();
 
-    var query = FirebaseFirestore.instance
+    return FirebaseFirestore.instance
         .collection('transactions')
-        .where('user', isEqualTo: user!.uid);
-
-    if (_searchQuery.isNotEmpty) {
-      print("🔍 Searching for: '${_searchQuery.toLowerCase()}'"); // Debug print
-
-      return query
-          .where('product_names', arrayContains: _searchQuery.toLowerCase().trim())
-          .orderBy('timestamp', descending: true)
-          .snapshots();
-    } else {
-      return query
-          .orderBy('timestamp', descending: true)
-          .snapshots();
-    }
+        .where('user', isEqualTo: user.uid)
+        .orderBy('timestamp', descending: true)
+        .snapshots();
   }
 
-  // Hybrid approach: Try server-side first, fallback to client-side
-  Stream<List<DocumentSnapshot>> _getHybridTransactionStream() {
-    if (user == null) return Stream.value([]);
+  List<DocumentSnapshot> _filterTransactions(List<DocumentSnapshot> docs) {
+    if (_searchQuery.isEmpty) return docs;
 
-    return _getTransactionStream().asyncMap((snapshot) async {
-      final docs = snapshot.docs;
-
-      // If no search query, return all docs
-      if (_searchQuery.isEmpty) {
-        return docs;
-      }
-
-      // If server-side search found results, use them
-      if (docs.isNotEmpty) {
-        print("✅ Server-side search found ${docs.length} results");
-        return docs;
-      }
-
-      // Fallback: Client-side search for partial matches
-      print("🔄 Fallback to client-side search for partial matches");
-      final allDocsSnapshot = await FirebaseFirestore.instance
-          .collection('transactions')
-          .where('user', isEqualTo: user!.uid)
-          .orderBy('timestamp', descending: true)
-          .get();
-
-      final searchLower = _searchQuery.toLowerCase().trim();
-      final filteredDocs = allDocsSnapshot.docs.where((doc) {
-        final data = doc.data();
-        final products = data['product'] as List<dynamic>? ?? [];
-
+    final searchLower = _searchQuery.toLowerCase().trim();
+    return docs.where((doc) {
+      try {
+        final data = doc.data() as Map<String, dynamic>;
+        final products = data['product'] as List? ?? [];
+        
         return products.any((product) {
-          if (product is Map<String, dynamic>) {
+          if (product is Map) {
             final productName = product['product']?.toString().toLowerCase() ?? '';
             return productName.contains(searchLower);
           }
           return false;
         });
-      }).toList();
-
-      print("🔍 Client-side search found ${filteredDocs.length} results");
-      return filteredDocs;
-    });
+      } catch (e) {
+        return false;
+      }
+    }).toList();
   }
 
-  // Show update dialog
-  void _updateTransaction(String docId) {
+  void _showUpdateDialog(String docId) {
     showDialog(
       context: context,
       builder: (context) => TransactionUpdate(docRef: docId),
     );
   }
 
-  // Show delete confirmation dialog
   void _showDeleteDialog(String docId) {
     showDialog(
       context: context,
@@ -121,238 +84,235 @@ class _TransactionScreenState extends State<TransactionScreen> {
     );
   }
 
-  // Delete transaction and update stock
   Future<void> _deleteTransaction(String docId) async {
+    LoadingDialog.show(context, "Deleting transaction...");
+
     try {
-      // Get transaction document
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
       final transactionDoc = await FirebaseFirestore.instance
           .collection('transactions')
           .doc(docId)
           .get();
+
       if (!transactionDoc.exists) {
-        _showToast("Transaction not found", Colors.red);
+        LoadingDialog.hide(context);
+        AppUtils.showError("Transaction not found");
         return;
       }
 
-      final data = transactionDoc.data();
-      if (data == null) {
-        _showToast("Transaction data is null", Colors.red);
-        return;
-      }
-
+      final data = transactionDoc.data()!;
       final type = data['type']?.toString() ?? '';
-      final product = data['product'] as List? ?? [];
-      if (type.isEmpty) {
-        _showToast("Invalid transaction type", Colors.red);
-        return;
-      }
+      final products = data['product'] as List? ?? [];
 
-      print("Deleting transaction: Type=$type, Products=${product.length}");
-
-      // Use batch for atomic operations
       final batch = FirebaseFirestore.instance.batch();
-
-      // Delete the transaction
+      
       batch.delete(FirebaseFirestore.instance.collection('transactions').doc(docId));
 
-      // Process each product for stock updates
-      for (var item in product) {
-        if (item == null) continue;
-        final itemMap = Map<String, dynamic>.from(item as Map);
-        final productName = itemMap['product']?.toString() ?? '';
-        final quantity = (itemMap['quantity'] as num?)?.toInt() ?? 0;
+      for (var product in products) {
+        if (product == null) continue;
+        
+        final productMap = product as Map<String, dynamic>;
+        final productName = productMap['product']?.toString() ?? '';
+        final quantity = (productMap['quantity'] as num?)?.toInt() ?? 0;
 
         if (productName.isEmpty || quantity <= 0) continue;
-        print("Processing product: Product=$productName, Quantity=$quantity");
 
-        // Find corresponding stock document
         final stockQuery = await FirebaseFirestore.instance
             .collection('stocks')
-            .where('user', isEqualTo: user!.uid)
+            .where('user', isEqualTo: user.uid)
             .where('product', isEqualTo: productName)
             .limit(1)
             .get();
 
-        if (stockQuery.docs.isEmpty) {
-          print("No stock document found for product: $productName");
-          continue;
-        }
-
-        final stockRef = FirebaseFirestore.instance
-            .collection('stocks')
-            .doc(stockQuery.docs.first.id);
-
-        // Calculate quantity change to reverse the transaction
-        final quantityChange = type == 'Purchase' ? -quantity : quantity;
-        print("Quantity change to apply for $productName: $quantityChange");
-
-        // Check if this product has other transactions
-        final allTransactionsQuery = await FirebaseFirestore.instance
-            .collection('transactions')
-            .where('user', isEqualTo: user!.uid)
-            .get();
-
-        bool hasOtherTransactions = false;
-        for (var doc in allTransactionsQuery.docs) {
-          if (doc.id == docId) continue; // Skip current transaction
-          final docData = doc.data();
-          final docProduct = docData['product'] as List? ?? [];
-          for (var docItem in docProduct) {
-            if (docItem != null) {
-              final docItemMap = Map<String, dynamic>.from(docItem as Map);
-              if (docItemMap['product']?.toString() == productName) {
-                hasOtherTransactions = true;
-                break;
-              }
-            }
-          }
-          if (hasOtherTransactions) break;
-        }
-
-        if (!hasOtherTransactions) {
-          print("Deleting stock entry for $productName as this is the last transaction");
-          batch.delete(stockRef);
-        } else {
-          // Update stock quantity and purchase/sales totals
-          print("Updating stock quantity for $productName by $quantityChange");
-          Map<String, dynamic> updateData = {
-            'quantity': FieldValue.increment(quantityChange)
-          };
-
-          // Also update the purchase or sales total
-          if (type == 'Purchase') {
-            updateData['purchase'] = FieldValue.increment(-quantity);
-            print("Decreasing purchase total by $quantity");
-          } else {
-            updateData['sales'] = FieldValue.increment(-quantity);
-            print("Decreasing sales total by $quantity");
-          }
-
-          batch.update(stockRef, updateData);
+        if (stockQuery.docs.isNotEmpty) {
+          final stockRef = stockQuery.docs.first.reference;
+          final quantityChange = type == 'Purchase' ? -quantity : quantity;
+          
+          batch.update(stockRef, {
+            'quantity': FieldValue.increment(quantityChange),
+            if (type == 'Purchase') 'purchase': FieldValue.increment(-quantity),
+            if (type == 'Sale') 'sales': FieldValue.increment(-quantity),
+          });
         }
       }
 
       await batch.commit();
-      if (Navigator.canPop(context)) {
-        Navigator.of(context).pop();
-      }
+      LoadingDialog.hide(context);
+      Navigator.pop(context);
+      AppUtils.showSuccess("Transaction deleted successfully");
 
-      _showToast("Transaction deleted successfully", Colors.green);
-    } catch (error) {
-      print("Error deleting transaction: $error");
-      _showToast("Failed to delete transaction: $error", Colors.red);
+    } catch (e) {
+      LoadingDialog.hide(context);
+      AppUtils.showError("Failed to delete transaction: $e");
     }
   }
 
-  // Show toast message
-  void _showToast(String message, Color backgroundColor) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.BOTTOM,
-      backgroundColor: backgroundColor,
-      textColor: Colors.white,
-      fontSize: 16.0,
+  @override
+  Widget build(BuildContext context) {
+    return WillPopScope(
+      onWillPop: () async {
+        widget.goToDashboard?.call();
+        return false;
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF6F6F6),
+        appBar: AppBar(
+          title: const Text("Transactions"),
+          backgroundColor: Colors.indigo,
+          foregroundColor: Colors.white,
+        ),
+        floatingActionButton: FloatingActionButton(
+          backgroundColor: Colors.indigo,
+          onPressed: () => showDialog(
+            context: context,
+            builder: (context) => const Transactionadd(),
+          ),
+          child: const Icon(Icons.add, color: Colors.white),
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search),
+                  hintText: 'Search by product name...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+                onChanged: (value) => setState(() => _searchQuery = value),
+              ),
+              const SizedBox(height: 16),
+              
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: _getTransactionsStream(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.error, color: Colors.red, size: 48),
+                            const SizedBox(height: 16),
+                            const Text("Error loading transactions"),
+                            Text("${snapshot.error}"),
+                          ],
+                        ),
+                      );
+                    }
+
+                    final allDocs = snapshot.data?.docs ?? [];
+                    final filteredDocs = _filterTransactions(allDocs);
+
+                    if (filteredDocs.isEmpty && _searchQuery.isNotEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.search_off, color: Colors.grey[400], size: 64),
+                            const SizedBox(height: 16),
+                            Text(
+                              "No transactions found for '$_searchQuery'",
+                              style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    if (filteredDocs.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.receipt_long, color: Colors.grey[400], size: 64),
+                            const SizedBox(height: 16),
+                            Text(
+                              "No transactions found",
+                              style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              "Add your first transaction using the + button",
+                              style: TextStyle(color: Colors.grey[500]),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      itemCount: filteredDocs.length,
+                      padding: const EdgeInsets.only(bottom: 80),
+                      itemBuilder: (context, index) {
+                        final doc = filteredDocs[index];
+                        return _buildTransactionCard(doc);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  // Helper method to safely get the first product name from product array
-  String _getFirstProductName(Map<String, dynamic> data) {
-    try {
-      final product = data['product'] as List? ?? [];
-      if (product.isNotEmpty && product[0] != null) {
-        final firstProduct = Map<String, dynamic>.from(product[0] as Map);
-        return firstProduct['product']?.toString() ?? 'Unknown Product';
-      }
-      return 'No Products';
-    } catch (e) {
-      print("Error getting first product name: $e");
-      return 'Error Loading Product';
-    }
-  }
-
-  // Helper method to safely get total quantity from product array
-  int _getTotalQuantity(Map<String, dynamic> data) {
-    try {
-      final product = data['product'] as List? ?? [];
-      int totalQuantity = 0;
-      for (var item in product) {
-        if (item != null) {
-          final itemMap = Map<String, dynamic>.from(item as Map);
-          totalQuantity += (itemMap['quantity'] as num?)?.toInt() ?? 0;
-        }
-      }
-      return totalQuantity;
-    } catch (e) {
-      print("Error getting total quantity: $e");
-      return 0;
-    }
-  }
-
-  // Helper method to safely get total amount from product array
-  double _getTotalAmount(Map<String, dynamic> data) {
-    try {
-      final product = data['product'] as List? ?? [];
-      double totalAmount = 0.0;
-      for (var item in product) {
-        if (item != null) {
-          final itemMap = Map<String, dynamic>.from(item as Map);
-          final quantity = (itemMap['quantity'] as num?)?.toInt() ?? 0;
-          final unitPrice = (itemMap['unitPrice'] as num?)?.toDouble() ?? 0.0;
-          totalAmount += quantity * unitPrice;
-        }
-      }
-      return totalAmount;
-    } catch (e) {
-      print("Error getting total amount: $e");
-      return 0.0;
-    }
-  }
-
-  // Helper method to safely get products count
-  int _getProductsCount(Map<String, dynamic> data) {
-    try {
-      final product = data['product'] as List? ?? [];
-      return product.where((item) => item != null).length;
-    } catch (e) {
-      print("Error getting products count: $e");
-      return 0;
-    }
-  }
-
-  // Helper method to safely get date
-  DateTime? _getTransactionDate(Map<String, dynamic> data) {
-    try {
-      final dateField = data['date'];
-      if (dateField is Timestamp) {
-        return dateField.toDate();
-      }
-      return null;
-    } catch (e) {
-      print("Error getting transaction date: $e");
-      return null;
-    }
-  }
-
-  // Build transaction card with complete null safety
   Widget _buildTransactionCard(DocumentSnapshot doc) {
     try {
-      final data = doc.data();
-      if (data == null) {
-        return _buildErrorCard('No data available', doc.id);
-      }
+      final data = doc.data() as Map<String, dynamic>;
+      final type = data['type']?.toString() ?? 'Unknown';
+      final status = data['status']?.toString() ?? 'Unknown';
+      final party = data['party']?.toString() ?? 'Unknown Party';
+      final products = data['product'] as List? ?? [];
 
-      final dataMap = Map<String, dynamic>.from(data as Map);
-      final type = dataMap['type']?.toString() ?? 'Unknown';
-      final status = dataMap['status']?.toString() ?? 'Unknown';
-      final party = dataMap['party']?.toString() ?? 'Unknown Party';
       final isPurchase = type == 'Purchase';
       final isPaid = status == 'Paid';
-      final productsCount = _getProductsCount(dataMap);
-      final totalQuantity = _getTotalQuantity(dataMap);
-      final totalAmount = _getTotalAmount(dataMap);
-      final firstProductName = _getFirstProductName(dataMap);
-      final transactionDate = _getTransactionDate(dataMap);
+
+      String productName = 'No Products';
+      int totalQuantity = 0;
+      double totalAmount = 0.0;
+
+      if (products.isNotEmpty && products[0] != null) {
+        final firstProduct = products[0] as Map<String, dynamic>;
+        productName = firstProduct['product']?.toString() ?? 'Unknown Product';
+
+        for (var product in products) {
+          if (product != null) {
+            final productMap = product as Map<String, dynamic>;
+            final quantity = (productMap['quantity'] as num?)?.toInt() ?? 0;
+            final unitPrice = (productMap['unitPrice'] as num?)?.toDouble() ?? 0.0;
+            totalQuantity += quantity;
+            totalAmount += quantity * unitPrice;
+          }
+        }
+
+        if (products.length > 1) {
+          productName = "$productName (+${products.length - 1} more)";
+        }
+      }
+
+      String dateString = "No Date";
+      try {
+        final timestamp = data['timestamp'];
+        if (timestamp is Timestamp) {
+          dateString = DateFormat('dd-MM-yyyy').format(timestamp.toDate());
+        }
+      } catch (e) {
+        // Keep default "No Date"
+      }
 
       return Card(
         elevation: 2,
@@ -363,7 +323,6 @@ class _TransactionScreenState extends State<TransactionScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header row
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -378,13 +337,8 @@ class _TransactionScreenState extends State<TransactionScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            productsCount > 1
-                                ? "$firstProductName (+${productsCount - 1} more)"
-                                : _capitalizeFirstLetter(firstProductName),
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16
-                            ),
+                            AppUtils.capitalize(productName),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -410,23 +364,20 @@ class _TransactionScreenState extends State<TransactionScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Transaction details
-              _buildDetailRow(Icons.format_list_numbered, "Products: $productsCount"),
+              _buildDetailRow(Icons.format_list_numbered, "Products: ${products.length}"),
               const SizedBox(height: 4),
               _buildDetailRow(Icons.inventory_2, "Total Qty: $totalQuantity"),
               const SizedBox(height: 4),
               _buildDetailRow(Icons.attach_money, "Total: ₹${totalAmount.toStringAsFixed(2)}"),
               const SizedBox(height: 4),
-              if (transactionDate != null)
-                _buildDetailRow(Icons.calendar_today, "Date: ${_formatDate(transactionDate)}"),
-              if (transactionDate != null) const SizedBox(height: 4),
+              _buildDetailRow(Icons.calendar_today, "Date: $dateString"),
+              const SizedBox(height: 4),
               _buildDetailRow(
-                  Icons.local_offer,
-                  "${isPurchase ? 'Supplier' : 'Customer'}: $party"
+                Icons.local_offer,
+                "${isPurchase ? 'Supplier' : 'Customer'}: $party",
               ),
               const SizedBox(height: 12),
 
-              // Status and actions row
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -449,20 +400,15 @@ class _TransactionScreenState extends State<TransactionScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        onPressed: () => _updateTransaction(doc.id),
+                        onPressed: () => _showUpdateDialog(doc.id),
                         icon: const Icon(Icons.edit, size: 20),
                         tooltip: "Update Transaction",
-                        padding: const EdgeInsets.all(8),
-                        constraints: const BoxConstraints(),
                       ),
-                      const SizedBox(width: 4),
                       IconButton(
                         onPressed: () => _showDeleteDialog(doc.id),
                         icon: const Icon(Icons.delete, size: 20),
                         color: Colors.red.shade600,
                         tooltip: "Delete Transaction",
-                        padding: const EdgeInsets.all(8),
-                        constraints: const BoxConstraints(),
                       ),
                     ],
                   ),
@@ -473,58 +419,36 @@ class _TransactionScreenState extends State<TransactionScreen> {
         ),
       );
     } catch (e) {
-      print("Error building transaction card: $e");
-      return _buildErrorCard('Error loading transaction: $e', doc.id);
+      return Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(Icons.error, color: Colors.red.shade600, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Error loading transaction',
+                      style: TextStyle(fontWeight: FontWeight.w600, color: Colors.red.shade700),
+                    ),
+                    Text(
+                      'Error: $e',
+                      style: TextStyle(fontSize: 12, color: Colors.red.shade600),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
   }
 
-  // Build error card for failed transactions
-  Widget _buildErrorCard(String message, String docId) {
-    return Card(
-      elevation: 1,
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(Icons.error, color: Colors.red.shade600, size: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Error loading transaction',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Colors.red.shade700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    message,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.red.shade600,
-                    ),
-                  ),
-                  Text(
-                    'Doc ID: $docId',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Build detail row helper
   Widget _buildDetailRow(IconData icon, String text) {
     return Row(
       children: [
@@ -533,315 +457,10 @@ class _TransactionScreenState extends State<TransactionScreen> {
         Expanded(
           child: Text(
             text,
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey.shade700,
-            ),
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
           ),
         ),
       ],
-    );
-  }
-
-  // Format date helper
-  String _formatDate(DateTime date) {
-    try {
-      return "${date.day} ${DateFormat('MMM').format(date)} ${date.year}";
-    } catch (e) {
-      return "Invalid Date";
-    }
-  }
-
-  // Capitalize first letter helper
-  String _capitalizeFirstLetter(String text) {
-    if (text.isEmpty) return text;
-    return text[0].toUpperCase() + text.substring(1).toLowerCase();
-  }
-
-  // MIGRATION: Add product_names to existing transactions
-  Future<void> _migrateExistingTransactions() async {
-    if (user == null) return;
-
-    try {
-      final transactions = await FirebaseFirestore.instance
-          .collection('transactions')
-          .where('user', isEqualTo: user!.uid)
-          .get();
-
-      print("📊 Found ${transactions.docs.length} transactions to check");
-
-      final batch = FirebaseFirestore.instance.batch();
-      int migrationCount = 0;
-      int skippedCount = 0;
-
-      for (var doc in transactions.docs) {
-        final data = doc.data();
-
-        // Skip if already has product_names field
-        if (data['product_names'] != null) {
-          print("⏭️ Transaction ${doc.id} already has product_names: ${data['product_names']}");
-          skippedCount++;
-          continue;
-        }
-
-        final products = data['product'] as List<dynamic>? ?? [];
-        print("🔄 Processing transaction ${doc.id} with ${products.length} products");
-
-        final productNames = <String>[];
-        for (var product in products) {
-          if (product is Map<String, dynamic>) {
-            final productName = product['product']?.toString().toLowerCase().trim() ?? '';
-            if (productName.isNotEmpty) {
-              productNames.add(productName);
-              print("  ➕ Adding product name: '$productName'");
-            }
-          }
-        }
-
-        if (productNames.isNotEmpty) {
-          print("✅ Will add product_names: $productNames to transaction ${doc.id}");
-          batch.update(doc.reference, {'product_names': productNames});
-          migrationCount++;
-        } else {
-          print("⚠️ No valid product names found for transaction ${doc.id}");
-        }
-      }
-
-      if (migrationCount > 0) {
-        await batch.commit();
-        print("🎉 Migration completed for $migrationCount transactions");
-        _showToast('✅ Migration completed! Updated $migrationCount transactions', Colors.green);
-      } else if (skippedCount > 0) {
-        print("ℹ️ All $skippedCount transactions already have product names");
-        _showToast('ℹ️ All transactions already have product names', Colors.blue);
-      } else {
-        print("⚠️ No transactions found to migrate");
-        _showToast('⚠️ No transactions found to migrate', Colors.orange);
-      }
-    } catch (e) {
-      print("❌ Migration error: $e");
-      _showToast('❌ Migration failed: $e', Colors.red);
-    }
-  }
-
-  // DEBUG: Check transaction data structure
-  Future<void> _debugTransactions() async {
-    if (user == null) return;
-
-    try {
-      final transactions = await FirebaseFirestore.instance
-          .collection('transactions')
-          .where('user', isEqualTo: user!.uid)
-          .limit(3)
-          .get();
-
-      print("\n🔍 === DEBUG: Transaction Data Structure ===");
-
-      for (var doc in transactions.docs) {
-        final data = doc.data();
-        print("\n📄 Transaction ${doc.id}:");
-        print("  🏷️  Type: ${data['type']}");
-        print("  🏢  Party: ${data['party']}");
-        print("  📦  product_names: ${data['product_names']}");
-        print("  📋  products: ${data['product']}");
-
-        final products = data['product'] as List<dynamic>? ?? [];
-        print("  📝  Product details:");
-        for (int i = 0; i < products.length; i++) {
-          if (products[i] is Map<String, dynamic>) {
-            final product = products[i] as Map<String, dynamic>;
-            print("    ${i + 1}. ${product['product']} (qty: ${product['quantity']})");
-          }
-        }
-      }
-
-      print("=== END DEBUG ===\n");
-      _showToast('Check console for debug info', Colors.blue);
-    } catch (e) {
-      print("Debug error: $e");
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        if (widget.goToDashboard != null) {
-          widget.goToDashboard!();
-          return false;
-        }
-        return true;
-      },
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF6F6F6),
-        appBar: AppBar(
-          title: const Text("Transactions"),
-          backgroundColor: Colors.indigo,
-          foregroundColor: Colors.white,
-          elevation: 1,
-          actions: [
-            // Migration button
-            IconButton(
-              onPressed: _migrateExistingTransactions,
-              icon: const Icon(Icons.sync),
-              tooltip: 'Migrate existing transactions',
-            ),
-            // Debug button (remove in production)
-            IconButton(
-              onPressed: _debugTransactions,
-              icon: const Icon(Icons.bug_report),
-              tooltip: 'Debug transactions',
-            ),
-          ],
-        ),
-        floatingActionButton: FloatingActionButton(
-          backgroundColor: Colors.indigo,
-          onPressed: () {
-            showDialog(
-              context: context,
-              builder: (context) => Transactionadd(),
-            );
-          },
-          child: const Icon(Icons.add, color: Colors.white),
-        ),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              // Search field
-              TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.search),
-                  hintText: 'Search by product name (e.g., "onion", "garlic")...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                onChanged: (value) {
-                  setState(() {
-                    _searchQuery = value;
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // Transaction list with hybrid search
-              Expanded(
-                child: StreamBuilder<List<DocumentSnapshot>>(
-                  stream: _getHybridTransactionStream(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
-                    if (snapshot.hasError) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.error, color: Colors.red, size: 48),
-                            const SizedBox(height: 16),
-                            Text(
-                              "Error loading transactions",
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              "${snapshot.error}",
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.grey.shade600),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
-                    final docs = snapshot.data ?? [];
-
-                    if (docs.isEmpty && _searchQuery.isNotEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.search_off, color: Colors.grey.shade400, size: 64),
-                            const SizedBox(height: 16),
-                            Text(
-                              "No transactions found for '$_searchQuery'",
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              "Try exact product names like 'onion', 'garlic'",
-                              style: TextStyle(color: Colors.grey.shade500),
-                            ),
-                            const SizedBox(height: 16),
-                            ElevatedButton.icon(
-                              onPressed: _debugTransactions,
-                              icon: Icon(Icons.info_outline),
-                              label: Text("Debug Data"),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue,
-                                foregroundColor: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
-                    if (docs.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.receipt_long, color: Colors.grey.shade400, size: 64),
-                            const SizedBox(height: 16),
-                            Text(
-                              "No transactions found",
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              "Add your first transaction using the + button",
-                              style: TextStyle(color: Colors.grey.shade500),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
-                    return ListView.builder(
-                      itemCount: docs.length,
-                      padding: const EdgeInsets.only(bottom: 80),
-                      itemBuilder: (context, index) {
-                        final doc = docs[index];
-                        if (doc.exists) {
-                          return _buildTransactionCard(doc);
-                        } else {
-                          return _buildErrorCard('Document does not exist', doc.id);
-                        }
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'utils.dart';
 
 class LowStocks extends StatefulWidget {
   const LowStocks({super.key});
@@ -10,8 +11,9 @@ class LowStocks extends StatefulWidget {
 }
 
 class _LowStocksState extends State<LowStocks> {
-  final int _lowStockThreshold = 10; // Define threshold for low stock
+  final int _lowStockThreshold = 10;
   final user = FirebaseAuth.instance.currentUser;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -27,20 +29,17 @@ class _LowStocksState extends State<LowStocks> {
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
-            .collection("stocks").where("user",isEqualTo: user?.uid)
+            .collection("stocks")
+            .where("user", isEqualTo: user?.uid)
             .where('quantity', isLessThanOrEqualTo: _lowStockThreshold)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(
-              child: Text("Error: ${snapshot.error}"),
-            );
+            return Center(child: Text("Error: ${snapshot.error}"));
           }
-          
+
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+            return const Center(child: CircularProgressIndicator());
           }
 
           if (snapshot.data?.docs.isEmpty ?? true) {
@@ -79,13 +78,12 @@ class _LowStocksState extends State<LowStocks> {
             padding: const EdgeInsets.all(16),
             itemCount: snapshot.data!.docs.length,
             itemBuilder: (context, index) {
-              DocumentSnapshot stockDoc = snapshot.data!.docs[index];
-              Map<String, dynamic> stockData = stockDoc.data() as Map<String, dynamic>;
-
-              String productName = stockData['product'] ?? 'Unknown Product';
-              int quantity = stockData['quantity'] ?? 0;
-              int purchase = stockData['purchase'] ?? 0;
-              int sales = stockData['sales'] ?? 0;
+              final stockDoc = snapshot.data!.docs[index];
+              final stockData = stockDoc.data() as Map<String, dynamic>;
+              final productName = stockData['product'] ?? 'Unknown Product';
+              final quantity = stockData['quantity'] ?? 0;
+              final purchase = stockData['purchase'] ?? 0;
+              final sales = stockData['sales'] ?? 0;
 
               // Determine severity level
               Color severityColor;
@@ -116,7 +114,7 @@ class _LowStocksState extends State<LowStocks> {
                       color: Colors.grey.withOpacity(0.15),
                       blurRadius: 8,
                       offset: const Offset(0, 4),
-                    )
+                    ),
                   ],
                 ),
                 child: ListTile(
@@ -134,7 +132,7 @@ class _LowStocksState extends State<LowStocks> {
                     ),
                   ),
                   title: Text(
-                    _capitalizeFirstLetter(productName),
+                    AppUtils.capitalize(productName),
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -197,9 +195,4 @@ class _LowStocksState extends State<LowStocks> {
       ),
     );
   }
-
-  String _capitalizeFirstLetter(String text) {
-    if (text.isEmpty) return text;
-    return text[0].toUpperCase() + text.substring(1).toLowerCase();
-  }
-} 
+}

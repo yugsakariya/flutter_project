@@ -17,13 +17,29 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      return web;
+      throw UnsupportedError(
+        'DefaultFirebaseOptions have not been configured for web - '
+        'you can reconfigure this by running the FlutterFire CLI again.',
+      );
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
+      case TargetPlatform.iOS:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for ios - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
+      case TargetPlatform.macOS:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for macos - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
       case TargetPlatform.windows:
-        return windows;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for windows - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
@@ -36,17 +52,6 @@ class DefaultFirebaseOptions {
     }
   }
 
-  static const FirebaseOptions web = FirebaseOptions(
-      apiKey: "AIzaSyDqj_VAWPID9fU6cz7xJ_GO1IGywRSbg8E",
-      authDomain: "collageproject-1022.firebaseapp.com",
-      databaseURL: "https://collageproject-1022-default-rtdb.asia-southeast1.firebasedatabase.app",
-      projectId: "collageproject-1022",
-      storageBucket: "collageproject-1022.firebasestorage.app",
-      messagingSenderId: "861779117481",
-      appId: "1:861779117481:web:113ff9cc21b84acb5870b8",
-      measurementId: "G-EY99QBP806"
-  );
-
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyAmduxoUsBuY8LPJOrCPn2T69-2dAhCcp0',
     appId: '1:861779117481:android:7b78cadad656305e5870b8',
@@ -55,16 +60,4 @@ class DefaultFirebaseOptions {
     databaseURL: 'https://collageproject-1022-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'collageproject-1022.firebasestorage.app',
   );
-
-  static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyDqj_VAWPID9fU6cz7xJ_GO1IGywRSbg8E',
-    appId: '1:861779117481:web:631cf342b717c8755870b8',
-    messagingSenderId: '861779117481',
-    projectId: 'collageproject-1022',
-    authDomain: 'collageproject-1022.firebaseapp.com',
-    databaseURL: 'https://collageproject-1022-default-rtdb.asia-southeast1.firebasedatabase.app',
-    storageBucket: 'collageproject-1022.firebasestorage.app',
-    measurementId: 'G-HQ7G49FDRV',
-  );
-
 }

@@ -2,7 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:fluttertoast/fluttertoast.dart';
+import 'utils.dart';
+import 'party_management.dart';
 
 class NewBillScreen extends StatefulWidget {
   const NewBillScreen({super.key});
@@ -12,705 +13,480 @@ class NewBillScreen extends StatefulWidget {
 }
 
 class _NewBillScreenState extends State<NewBillScreen> {
-  final TextEditingController nameController = TextEditingController();
-  final TextEditingController phoneController = TextEditingController();
-  final TextEditingController cityController = TextEditingController();
-  final TextEditingController stateController = TextEditingController();
-  final TextEditingController billNumberController = TextEditingController();
-  final FocusNode nameFocusNode = FocusNode();
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _stateController = TextEditingController();
+  final _billNumberController = TextEditingController();
+  final _nameFocusNode = FocusNode();
 
-  bool showCustomerSuggestions = false;
-  DateTime selectedDate = DateTime.now();
-  List<Map<String, dynamic>> items = [];
-  final user = FirebaseAuth.instance.currentUser;
-  String? pendingBillNumber;
-  String? linkedTransactionId;
-
-  String formatDate(DateTime date) => DateFormat.yMMMd().format(date);
+  DateTime _selectedDate = DateTime.now();
+  List<Map<String, String>> _items = [];
+  bool _showSuggestions = false;
 
   @override
   void initState() {
     super.initState();
     _initializeBillNumber();
-    nameFocusNode.addListener(() {
-      setState(() => showCustomerSuggestions = nameFocusNode.hasFocus);
+    _nameFocusNode.addListener(() {
+      setState(() => _showSuggestions = _nameFocusNode.hasFocus);
     });
   }
 
   @override
   void dispose() {
-    nameController.dispose();
-    phoneController.dispose();
-    cityController.dispose();
-    stateController.dispose();
-    billNumberController.dispose();
-    nameFocusNode.dispose();
+    _nameController.dispose();
+    _phoneController.dispose();
+    _cityController.dispose();
+    _stateController.dispose();
+    _billNumberController.dispose();
+    _nameFocusNode.dispose();
     super.dispose();
   }
 
-  // Get customer suggestions
-  Stream<List<String>> _getCustomerSuggestions(String query) {
-    if (query.trim().isEmpty) return Stream.value([]);
-    final lowercaseQuery = query.trim().toLowerCase();
-    return FirebaseFirestore.instance
-        .collection('customers')
-        .where('user', isEqualTo: user?.uid)
-        .snapshots()
-        .map((snapshot) {
-      final customers = snapshot.docs
-          .map((doc) => doc['name'] as String? ?? '')
-          .where((name) => name.isNotEmpty &&
-          name.toLowerCase().contains(lowercaseQuery))
-          .toSet()
-          .toList();
-      customers.sort();
-      return customers.take(10).toList();
-    });
+  Future<void> _initializeBillNumber() async {
+    final billNo = await _getNextBillNumber();
+    _billNumberController.text = billNo;
   }
 
-  // Load customer details when selected
-  Future<void> _loadCustomerDetails(String customerName) async {
+  Future<String> _getNextBillNumber() async {
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('billcounter')
+          .where('user', isEqualTo: user?.uid)
+          .get();
+
+      if (querySnapshot.docs.isEmpty) {
+        return "INV-1";
+      }
+
+      final doc = querySnapshot.docs.first;
+      final currentCounter = doc.data()['counter'] ?? 0;
+      return "INV-${currentCounter + 1}";
+    } catch (e) {
+      return "INV-${DateTime.now().millisecondsSinceEpoch}";
+    }
+  }
+
+  Future<String> _generateBillNumber() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('billcounter')
+          .where('user', isEqualTo: user?.uid)
+          .get();
+
+      int newCounter;
+      if (querySnapshot.docs.isEmpty) {
+        await FirebaseFirestore.instance.collection('billcounter').add({
+          'user': user?.uid,
+          'counter': 1,
+        });
+        newCounter = 1;
+      } else {
+        final doc = querySnapshot.docs.first;
+        final currentCounter = doc.data()['counter'] ?? 0;
+        newCounter = currentCounter + 1;
+        await doc.reference.update({'counter': newCounter});
+      }
+      return "INV-$newCounter";
+    } catch (e) {
+      return "INV-${DateTime.now().millisecondsSinceEpoch}";
+    }
+  }
+
+  void _loadCustomerDetails(String customerName) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
       final customerQuery = await FirebaseFirestore.instance
           .collection('customers')
           .where('user', isEqualTo: user?.uid)
           .where('name', isEqualTo: customerName)
           .limit(1)
           .get();
+
       if (customerQuery.docs.isNotEmpty) {
         final customerData = customerQuery.docs.first.data();
         setState(() {
-          phoneController.text = customerData['phone'] ?? '';
-          cityController.text = customerData['city'] ?? '';
-          stateController.text = customerData['state'] ?? '';
+          _phoneController.text = customerData['phone'] ?? '';
+          _cityController.text = customerData['city'] ?? '';
+          _stateController.text = customerData['state'] ?? '';
         });
       }
     } catch (e) {
-      print('Error loading customer details: $e');
+      AppUtils.showError('Error loading customer details: $e');
     }
   }
 
-  // Show add customer dialog
   void _showAddCustomerDialog() {
-    final newNameController = TextEditingController(text: nameController.text);
-    final newPhoneController = TextEditingController();
-    final newCityController = TextEditingController();
-    final newStateController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
+    showDialog(
+      context: context,
+      builder: (context) => PartyDialog(
+        partyType: PartyType.customer,
+        initialName: _nameController.text,
+        onPartyAdded: (customerData) {
+          setState(() {
+            _nameController.text = customerData['name'] ?? '';
+            _phoneController.text = customerData['phone'] ?? '';
+            _cityController.text = customerData['city'] ?? '';
+            _stateController.text = customerData['state'] ?? '';
+          });
+        },
+      ),
+    );
+  }
 
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
+    }
+  }
+
+  void _addItem() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Add New Customer'),
-        content: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: newNameController,
-                  decoration: InputDecoration(
-                    labelText: 'Customer Name*',
-                    prefixIcon: Icon(Icons.person),
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (value) =>
-                  value?.isEmpty ?? true ? 'Please enter name' : null,
-                ),
-                SizedBox(height: 16),
-                TextFormField(
-                  controller: newPhoneController,
-                  decoration: InputDecoration(
-                    labelText: 'Phone Number',
-                    prefixIcon: Icon(Icons.phone),
-                    border: OutlineInputBorder(),
-                    prefixText: '+91 ',
-                  ),
-                  keyboardType: TextInputType.phone,
-                  maxLength: 10,
-                  validator: (value) {
-                    if (value?.trim().isNotEmpty == true && value!.trim().length != 10) {
-                      return 'Please enter a valid 10-digit phone number';
-                    }
-                    return null;
-                  },
-                ),
-                SizedBox(height: 16),
-                TextFormField(
-                  controller: newCityController,
-                  decoration: InputDecoration(
-                    labelText: 'City',
-                    prefixIcon: Icon(Icons.location_city),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                SizedBox(height: 16),
-                TextFormField(
-                  controller: newStateController,
-                  decoration: InputDecoration(
-                    labelText: 'State',
-                    prefixIcon: Icon(Icons.map),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-          ),
+        title: const Text('Add Item'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: _buildProductList(),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => _addNewCustomer(
-              newNameController.text,
-              newPhoneController.text,
-              newCityController.text,
-              newStateController.text,
-              formKey,
-            ),
-            child: Text('Add'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.indigo,
-              foregroundColor: Colors.white,
-            ),
+            child: const Text('Cancel'),
           ),
         ],
       ),
     );
   }
 
-  // Add new customer
-  Future<void> _addNewCustomer(String name, String phone, String city, String state,
-      GlobalKey<FormState> formKey) async {
-    if (!formKey.currentState!.validate()) return;
-    try {
-      await FirebaseFirestore.instance.collection('customers').add({
-        'name': name.trim(),
-        'phone': phone.trim(),
-        'city': city.trim(),
-        'state': state.trim(),
-        'user': user?.uid,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      Navigator.pop(context);
-
-      // Auto-fill the form with new customer data
-      setState(() {
-        nameController.text = name.trim();
-        phoneController.text = phone.trim();
-        cityController.text = city.trim();
-        stateController.text = state.trim();
-      });
-
-      Fluttertoast.showToast(
-        msg: 'Customer added successfully!',
-        backgroundColor: Colors.green,
-      );
-    } catch (e) {
-      Fluttertoast.showToast(
-        msg: 'Error adding customer: $e',
-        backgroundColor: Colors.red,
-      );
-    }
-  }
-
-  // Build suggestions list widget
-  Widget _buildSuggestionsList({
-    required Stream<List<String>> stream,
-    required TextEditingController controller,
-    required FocusNode focusNode,
-  }) {
-    return StreamBuilder<List<String>>(
-      stream: stream,
+  Widget _buildProductList() {
+    final user = FirebaseAuth.instance.currentUser;
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('stocks')
+          .where('user', isEqualTo: user?.uid)
+          .where('quantity', isGreaterThan: 0)
+          .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 50,
-            margin: const EdgeInsets.only(top: 4),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: const Center(
-              child: SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          );
+          return const Center(child: CircularProgressIndicator());
         }
 
-        final suggestions = snapshot.data ?? [];
-        if (suggestions.isEmpty) return const SizedBox.shrink();
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const Center(child: Text('No stocks available'));
+        }
 
-        return Container(
-          constraints: const BoxConstraints(maxHeight: 200),
-          margin: const EdgeInsets.only(top: 4),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey.shade300),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: ListView.separated(
-              shrinkWrap: true,
-              padding: EdgeInsets.zero,
-              itemCount: suggestions.length,
-              separatorBuilder: (context, index) => Divider(
-                height: 1,
-                color: Colors.grey.shade200,
-              ),
-              itemBuilder: (context, index) => InkWell(
-                onTap: () {
-                  controller.text = suggestions[index];
-                  focusNode.unfocus();
-                  _loadCustomerDetails(suggestions[index]);
-                  setState(() {});
-                },
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Text(
-                    suggestions[index],
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> pickDate() async {
-    DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: selectedDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (picked != null) {
-      setState(() {
-        selectedDate = picked;
-      });
-    }
-  }
-
-  void addItem() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Add Item'),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 400,
-            child: StreamBuilder<QuerySnapshot>(
-              // ONLY SHOW PRODUCTS WITH AVAILABLE STOCK > 0
-              stream: FirebaseFirestore.instance
-                  .collection('stocks')
-                  .where('user', isEqualTo: user?.uid)
-                  .where('quantity', isGreaterThan: 0) // Only available stocks
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text('No stocks available'));
-                }
-
-                return ListView.builder(
-                  itemCount: snapshot.data!.docs.length,
-                  itemBuilder: (context, index) {
-                    final doc = snapshot.data!.docs[index];
-                    final data = doc.data() as Map<String, dynamic>;
-                    return _ProductSelectionCard(
-                      productData: data,
-                      onItemAdded: (item) {
-                        setState(() {
-                          items.add(item);
-                        });
-                        Navigator.of(context).pop();
-                      },
-                    );
-                  },
-                );
+        return ListView.builder(
+          itemCount: snapshot.data!.docs.length,
+          itemBuilder: (context, index) {
+            final doc = snapshot.data!.docs[index];
+            final data = doc.data() as Map<String, dynamic>;
+            return ProductSelectionCard(
+              productData: data,
+              onItemAdded: (item) {
+                setState(() => _items.add(item));
+                Navigator.pop(context);
               },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
   }
 
-  Future<String> _getNextBillNumber() async {
-    try {
-      final querySnapshot = await FirebaseFirestore.instance
-          .collection('billcounter')
-          .where('user', isEqualTo: user?.uid)
-          .get();
-
-      if (querySnapshot.docs.isEmpty) {
-        return "INV-1";
-      } else {
-        final doc = querySnapshot.docs.first;
-        final data = doc.data();
-        final currentCounter = data['counter'] ?? 0;
-        return "INV-${currentCounter + 1}";
-      }
-    } catch (e) {
-      return "INV-${DateTime.now().millisecondsSinceEpoch}";
-    }
-  }
-
-  Future<String> _generateAndIncrementBillNumber() async {
-    try {
-      final querySnapshot = await FirebaseFirestore.instance
-          .collection('billcounter')
-          .where('user', isEqualTo: user?.uid)
-          .get();
-
-      if (querySnapshot.docs.isEmpty) {
-        await FirebaseFirestore.instance.collection('billcounter').add({
-          'user': user?.uid,
-          'counter': 1,
-        });
-        return "INV-1";
-      } else {
-        final doc = querySnapshot.docs.first;
-        final data = doc.data();
-        final currentCounter = data['counter'] ?? 0;
-        final newCounter = currentCounter + 1;
-        await doc.reference.update({'counter': newCounter});
-        return "INV-$newCounter";
-      }
-    } catch (e) {
-      return "INV-${DateTime.now().millisecondsSinceEpoch}";
-    }
-  }
-
-  void _initializeBillNumber() async {
-    try {
-      final billNo = await _getNextBillNumber();
-      if (mounted) {
-        setState(() {
-          pendingBillNumber = billNo;
-          billNumberController.text = billNo;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          pendingBillNumber = "INV-1";
-          billNumberController.text = "INV-1";
-        });
-      }
-    }
-  }
-
-  double calculateSubtotal() {
-    double subtotal = 0.0;
-    for (var item in items) {
+  double _calculateSubtotal() {
+    return _items.fold(0.0, (sum, item) {
       final quantity = int.tryParse(item['quantity'] ?? '0') ?? 0;
       final price = double.tryParse(item['price'] ?? '0') ?? 0.0;
-      subtotal += quantity * price;
-    }
-    return subtotal;
+      return sum + (quantity * price);
+    });
   }
 
-  // REMOVED STOCK UPDATE METHOD - Bills don't manage stock anymore
-
-  Future<void> saveBill() async {
-    if (nameController.text.isEmpty || items.isEmpty) {
-      Fluttertoast.showToast(
-        msg: 'Please add customer name and items',
-        backgroundColor: Colors.orange,
-        textColor: Colors.white,
-      );
+  Future<void> _saveBill() async {
+    if (_nameController.text.isEmpty || _items.isEmpty) {
+      AppUtils.showWarning('Please add customer name and items');
       return;
     }
 
-    try {
-      final finalBillNumber = await _generateAndIncrementBillNumber();
-      double subtotal = calculateSubtotal();
-      double tax = subtotal * 0.05;
-      double total = subtotal + tax;
+    LoadingDialog.show(context, 'Saving bill...');
 
-      // REMOVED STOCK UPDATE LOOP - Bills only show available stock, don't manage it
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final billNumber = await _generateBillNumber();
+      final subtotal = _calculateSubtotal();
+      final tax = subtotal * 0.05;
+      final total = subtotal + tax;
 
       await FirebaseFirestore.instance.collection('bills').add({
         'user': user?.uid,
-        'billNumber': finalBillNumber,
-        'customerName': nameController.text,
-        'customerPhone': phoneController.text,
-        'customerCity': cityController.text,
-        'customerState': stateController.text,
-        'date': selectedDate,
-        'items': items,
+        'billNumber': billNumber,
+        'customerName': _nameController.text,
+        'customerPhone': _phoneController.text,
+        'customerCity': _cityController.text,
+        'customerState': _stateController.text,
+        'date': _selectedDate,
+        'items': _items,
         'subtotal': subtotal,
         'tax': tax,
         'total': total,
-        'linkedTransactionId': linkedTransactionId,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         'billType': 'manual',
       });
 
-      Fluttertoast.showToast(
-        msg: 'Bill $finalBillNumber saved successfully!',
-        backgroundColor: Colors.green,
-        textColor: Colors.white,
-      );
-
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
+      LoadingDialog.hide(context);
+      AppUtils.showSuccess('Bill $billNumber saved successfully!');
+      Navigator.pop(context);
     } catch (e) {
-      Fluttertoast.showToast(
-        msg: 'Error saving bill: $e',
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
+      LoadingDialog.hide(context);
+      AppUtils.showError('Error saving bill: $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    double subtotal = calculateSubtotal();
-    double tax = subtotal * 0.05;
-    double total = subtotal + tax;
+    final subtotal = _calculateSubtotal();
+    final tax = subtotal * 0.05;
+    final total = subtotal + tax;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('New Bill'),
         backgroundColor: Colors.indigo,
         foregroundColor: Colors.white,
-        elevation: 1,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 16),
-            const Text('CUSTOMER DETAILS', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-
-            // Enhanced Name Field with Autocomplete and Add Option
-            Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: nameController,
-                        focusNode: nameFocusNode,
-                        decoration: InputDecoration(
-                          labelText: 'Customer Name',
-                          suffixIcon: IconButton(
-                            icon: Icon(Icons.person_add, color: Colors.indigo),
-                            onPressed: _showAddCustomerDialog,
-                            tooltip: 'Add New Customer',
-                          ),
-                        ),
-                        onChanged: (value) {
-                          setState(() {});
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                if (showCustomerSuggestions && nameController.text.isNotEmpty)
-                  _buildSuggestionsList(
-                    stream: _getCustomerSuggestions(nameController.text),
-                    controller: nameController,
-                    focusNode: nameFocusNode,
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            TextField(
-              controller: phoneController,
-              decoration: const InputDecoration(
-                labelText: 'Phone Number',
-                prefixText: '+91 ',
-              ),
-              keyboardType: TextInputType.phone,
-              maxLength: 10,
-            ),
-            const SizedBox(height: 8),
-
-            TextField(
-              controller: cityController,
-              decoration: const InputDecoration(labelText: 'City'),
-            ),
-            const SizedBox(height: 8),
-
-            TextField(
-              controller: stateController,
-              decoration: const InputDecoration(labelText: 'State'),
-            ),
-            const SizedBox(height: 16),
-
-            const Text('BILL INFO', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-
-            TextField(
-              controller: billNumberController,
-              decoration: const InputDecoration(labelText: 'Bill Number'),
-              enabled: false,
-            ),
-            const SizedBox(height: 8),
-
-            Row(
-              children: [
-                const Text("Date Today's:"),
-                const SizedBox(width: 10),
-                TextButton(
-                  onPressed: pickDate,
-                  child: Text(DateFormat.yMMMd().format(selectedDate)),
-                ),
-                const Spacer(),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            const Text('ITEMS', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-
-            ElevatedButton.icon(
-              onPressed: addItem,
-              icon: const Icon(Icons.add),
-              label: const Text("Add Item"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.deepPurple,
-                foregroundColor: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            items.isEmpty
-                ? const Text("No items added yet")
-                : Column(
-              children: items.map((item) => Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                child: ListTile(
-                  title: Text(item['name'] ?? 'Unknown'),
-                  subtitle: Text('Quantity: ${item['quantity'] ?? '0'}'),
-                  trailing: Text('₹${item['price'] ?? '0'}',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                  leading: IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () {
-                      setState(() {
-                        items.remove(item);
-                      });
-                    },
-                  ),
-                ),
-              )).toList(),
-            ),
-            const SizedBox(height: 16),
-
-            const Text('SUMMARY', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("Subtotal:"),
-                Text("₹${subtotal.toStringAsFixed(2)}"),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("Tax (5%):"),
-                Text("₹${tax.toStringAsFixed(2)}"),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("Total:", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text("₹${total.toStringAsFixed(2)}",
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-              ],
-            ),
+            _buildSectionHeader('CUSTOMER DETAILS'),
+            _buildCustomerForm(),
+            
+            _buildSectionHeader('BILL INFO'),
+            _buildBillInfo(),
+            
+            _buildSectionHeader('ITEMS'),
+            _buildItemsSection(),
+            
+            _buildSectionHeader('SUMMARY'),
+            _buildSummary(subtotal, tax, total),
+            
             const SizedBox(height: 20),
-
-            ElevatedButton(
-              onPressed: saveBill,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                minimumSize: const Size(double.infinity, 50),
-              ),
-              child: const Text('Save Bill', style: TextStyle(fontSize: 16)),
-            ),
+            _buildSaveButton(),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _buildCustomerForm() {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: AppTextField(
+                controller: _nameController,
+                focusNode: _nameFocusNode,
+                labelText: 'Customer Name',
+                onChanged: (value) => setState(() {}),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.person_add, color: Colors.indigo),
+              onPressed: _showAddCustomerDialog,
+              tooltip: 'Add New Customer',
+            ),
+          ],
+        ),
+        if (_showSuggestions && _nameController.text.isNotEmpty)
+          SuggestionsList(
+            stream: FirestoreHelper.getSuggestions('customers', 'name', _nameController.text),
+            controller: _nameController,
+            focusNode: _nameFocusNode,
+            onSelected: _loadCustomerDetails,
+          ),
+        const SizedBox(height: 8),
+        AppTextField(
+          controller: _phoneController,
+          labelText: 'Phone Number',
+          prefixText: '+91 ',
+          keyboardType: TextInputType.phone,
+          maxLength: 10,
+        ),
+        const SizedBox(height: 8),
+        AppTextField(
+          controller: _cityController,
+          labelText: 'City',
+        ),
+        const SizedBox(height: 8),
+        AppTextField(
+          controller: _stateController,
+          labelText: 'State',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBillInfo() {
+    return Column(
+      children: [
+        AppTextField(
+          controller: _billNumberController,
+          labelText: 'Bill Number',
+          enabled: false,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            const Text("Date: "),
+            TextButton(
+              onPressed: _pickDate,
+              child: Text(DateFormat.yMMMd().format(_selectedDate)),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildItemsSection() {
+    return Column(
+      children: [
+        ElevatedButton.icon(
+          onPressed: _addItem,
+          icon: const Icon(Icons.add),
+          label: const Text("Add Item"),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.deepPurple,
+            foregroundColor: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (_items.isEmpty)
+          const Text("No items added yet")
+        else
+          ..._items.map((item) => Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  title: Text(item['name'] ?? 'Unknown'),
+                  subtitle: Text('Quantity: ${item['quantity'] ?? '0'}'),
+                  trailing: Text(
+                    '₹${item['price'] ?? '0'}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  leading: IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    onPressed: () => setState(() => _items.remove(item)),
+                  ),
+                ),
+              )),
+      ],
+    );
+  }
+
+  Widget _buildSummary(double subtotal, double tax, double total) {
+    return Column(
+      children: [
+        _buildSummaryRow("Subtotal:", "₹${subtotal.toStringAsFixed(2)}"),
+        _buildSummaryRow("Tax (5%):", "₹${tax.toStringAsFixed(2)}"),
+        _buildSummaryRow(
+          "Total:",
+          "₹${total.toStringAsFixed(2)}",
+          isBold: true,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryRow(String label, String value, {bool isBold = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(fontWeight: isBold ? FontWeight.bold : FontWeight.normal),
+        ),
+        Text(
+          value,
+          style: TextStyle(fontWeight: isBold ? FontWeight.bold : FontWeight.normal),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSaveButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: _saveBill,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.green,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          minimumSize: const Size(double.infinity, 50),
+        ),
+        child: const Text('Save Bill', style: TextStyle(fontSize: 16)),
+      ),
+    );
+  }
 }
 
-class _ProductSelectionCard extends StatefulWidget {
+class ProductSelectionCard extends StatefulWidget {
   final Map<String, dynamic> productData;
-  final Function(Map<String, dynamic>) onItemAdded;
+  final Function(Map<String, String>) onItemAdded;
 
-  const _ProductSelectionCard({
+  const ProductSelectionCard({
+    super.key,
     required this.productData,
     required this.onItemAdded,
   });
 
   @override
-  _ProductSelectionCardState createState() => _ProductSelectionCardState();
+  State<ProductSelectionCard> createState() => _ProductSelectionCardState();
 }
 
-class _ProductSelectionCardState extends State<_ProductSelectionCard> {
-  late TextEditingController productPriceController;
-  late TextEditingController quantityController;
-  final formKey = GlobalKey<FormState>();
-
-  @override
-  void initState() {
-    super.initState();
-    productPriceController = TextEditingController();
-    quantityController = TextEditingController(text: '1');
-  }
+class _ProductSelectionCardState extends State<ProductSelectionCard> {
+  final _priceController = TextEditingController();
+  final _quantityController = TextEditingController(text: '1');
+  final _formKey = GlobalKey<FormState>();
 
   @override
   void dispose() {
-    productPriceController.dispose();
-    quantityController.dispose();
+    _priceController.dispose();
+    _quantityController.dispose();
     super.dispose();
+  }
+
+  void _addToBill() {
+    if (_formKey.currentState!.validate()) {
+      widget.onItemAdded({
+        'name': widget.productData['product'] ?? 'Unknown',
+        'quantity': _quantityController.text,
+        'price': _priceController.text,
+      });
+    }
   }
 
   @override
@@ -722,7 +498,7 @@ class _ProductSelectionCardState extends State<_ProductSelectionCard> {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
-          key: formKey,
+          key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -730,72 +506,40 @@ class _ProductSelectionCardState extends State<_ProductSelectionCard> {
                 widget.productData['product'] ?? 'Unknown Product',
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
-              const SizedBox(height: 4),
               Text(
                 'Available Stock: $availableStock kg',
-                style: TextStyle(
-                  color: Colors.blue.shade600,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: TextStyle(color: Colors.blue.shade600, fontSize: 12),
               ),
               const SizedBox(height: 12),
-
-              // Direct Quantity Input
-              TextFormField(
-                controller: quantityController,
-                decoration: const InputDecoration(
-                  labelText: 'Quantity',
-                  border: OutlineInputBorder(),
-                  suffixText: 'kg',
-                ),
+              AppTextField(
+                controller: _quantityController,
+                labelText: 'Quantity',
+                suffixText: 'kg',
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value == null || value.isEmpty) return 'Enter quantity';
-                  final quantity = int.tryParse(value);
-                  if (quantity == null || quantity <= 0) return 'Quantity must be > 0';
+                  if (value?.isEmpty ?? true) return 'Enter quantity';
+                  final quantity = int.tryParse(value!) ?? 0;
+                  if (quantity <= 0) return 'Quantity must be > 0';
                   if (quantity > availableStock) return 'Max available: $availableStock kg';
                   return null;
                 },
               ),
               const SizedBox(height: 12),
-
-              // Price Input
-              TextFormField(
-                controller: productPriceController,
-                decoration: const InputDecoration(
-                  labelText: 'Price',
-                  prefixText: '₹',
-                  border: OutlineInputBorder(),
-                  suffixText: "per kg",
-                ),
-                keyboardType: TextInputType.numberWithOptions(decimal: true),
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Enter price';
-                  final price = double.tryParse(value);
-                  if (price == null || price <= 0) return 'Price must be > 0';
-                  return null;
-                },
+              AppTextField(
+                controller: _priceController,
+                labelText: 'Price per kg',
+                prefixText: '₹',
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                validator: (value) => AppUtils.validatePositiveNumber(value, 'Price'),
               ),
               const SizedBox(height: 16),
-
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    if (formKey.currentState!.validate()) {
-                      final quantity = int.parse(quantityController.text);
-                      widget.onItemAdded({
-                        'name': widget.productData['product'] ?? 'Unknown',
-                        'quantity': quantity.toString(),
-                        'price': productPriceController.text,
-                      });
-                    }
-                  },
+                  onPressed: _addToBill,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                   child: const Text("Add to Bill"),
                 ),

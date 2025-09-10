@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'utils.dart';
 
 class StockScreen extends StatefulWidget {
   final VoidCallback? goToDashboard;
@@ -17,11 +18,8 @@ class _StockScreenState extends State<StockScreen> {
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: () async {
-        if (widget.goToDashboard != null) {
-          widget.goToDashboard!();
-          return false;
-        }
-        return true;
+        widget.goToDashboard?.call();
+        return false;
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFF6F6F6),
@@ -31,10 +29,7 @@ class _StockScreenState extends State<StockScreen> {
           foregroundColor: Colors.white,
         ),
         body: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection("stocks")
-              .where('user', isEqualTo: user.uid)
-              .snapshots(),
+          stream: FirestoreHelper.getUserDocuments("stocks"),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return Center(child: Text("Error: ${snapshot.error}"));
@@ -73,7 +68,7 @@ class _StockScreenState extends State<StockScreen> {
                         color: Colors.grey.withOpacity(0.15),
                         blurRadius: 8,
                         offset: const Offset(0, 4),
-                      )
+                      ),
                     ],
                   ),
                   child: Theme(
@@ -85,7 +80,7 @@ class _StockScreenState extends State<StockScreen> {
                         children: [
                           Expanded(
                             child: Text(
-                              _capitalizeFirstLetter(productName),
+                              AppUtils.capitalize(productName),
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -148,10 +143,5 @@ class _StockScreenState extends State<StockScreen> {
         Text(value, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16)),
       ],
     );
-  }
-
-  String _capitalizeFirstLetter(String text) {
-    if (text.isEmpty) return text;
-    return text[0].toUpperCase() + text.substring(1).toLowerCase();
   }
 }

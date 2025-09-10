@@ -1,23 +1,18 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_project/Customers.dart';
-import 'package:flutter_project/Stocks.dart';
-import 'package:flutter_project/Profile.dart';
-import 'package:flutter_project/LowStocks.dart';
-import 'package:flutter_project/login.dart';
-import 'package:flutter_project/main.dart';
-import 'package:flutter_project/pdf_generator.dart';
-import 'package:flutter_project/report_generator.dart';
-import 'package:flutter_project/supplier.dart';
-import 'package:fluttertoast/fluttertoast.dart';
-import 'package:intl/intl.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:open_file/open_file.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'Transaction.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
+import 'package:open_file/open_file.dart';
+
+import 'utils.dart';
+import 'report_generator.dart';
+import 'Profile.dart';
+import 'party_management.dart';
+import 'Stocks.dart';
+import 'LowStocks.dart';
 
 class Dashboard extends StatefulWidget {
   final void Function(int)? onTabChange;
@@ -30,637 +25,199 @@ class Dashboard extends StatefulWidget {
 class _DashboardState extends State<Dashboard> {
   final user = FirebaseAuth.instance.currentUser!;
 
-  Future<bool> _showExitDialog() async {
-    return await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) =>
-          AlertDialog(
-            title: Text('Exit App'),
-            content: Text('Are you sure you want to exit?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: Text('No'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: Text('Yes'),
-              ),
-            ],
-          ),
-    ) ?? false;
-  }
-
-  Future<bool> _checkAndRequestStoragePermission() async {
-    try {
-      if (Platform.isAndroid) {
-        // Get Android version
-        final deviceInfo = await DeviceInfoPlugin().androidInfo;
-        final sdkInt = deviceInfo.version.sdkInt;
-        print("Android SDK version: $sdkInt");
-
-        Permission permission;
-
-        if (sdkInt >= 30) {
-          // Android 11 and above - use MANAGE_EXTERNAL_STORAGE
-          permission = Permission.manageExternalStorage;
-        } else {
-          // Android 10 and below - use WRITE_EXTERNAL_STORAGE
-          permission = Permission.storage;
-        }
-
-        // Check current status
-        PermissionStatus status = await permission.status;
-        print("Current permission status: $status");
-
-        if (status.isGranted) {
-          return true;
-        }
-
-        if (status.isDenied) {
-          // Show explanation before requesting
-          bool shouldRequest = await _showPermissionExplanationDialog();
-          if (!shouldRequest) return false;
-
-          // Request permission
-          status = await permission.request();
-          print("Permission request result: $status");
-
-          if (status.isGranted) {
-            _showPermissionGrantedMessage();
-            return true;
-          } else if (status.isPermanentlyDenied) {
-            _showPermissionPermanentlyDeniedDialog();
-            return false;
-          } else {
-            _showPermissionDeniedDialog();
-            return false;
-          }
-        }
-
-        if (status.isPermanentlyDenied) {
-          _showPermissionPermanentlyDeniedDialog();
-          return false;
-        }
-
-        // For any other status, try requesting
-        status = await permission.request();
-        return status.isGranted;
-      } else {
-        // For iOS, storage permission is usually not required
-        return true;
+  Future<bool> _checkStoragePermission() async {
+    if (Platform.isAndroid) {
+      final deviceInfo = await DeviceInfoPlugin().androidInfo;
+      final permission = deviceInfo.version.sdkInt >= 30 
+          ? Permission.manageExternalStorage 
+          : Permission.storage;
+      
+      if (await permission.isGranted) return true;
+      
+      final status = await permission.request();
+      if (!status.isGranted) {
+        _showPermissionDialog();
+        return false;
       }
-    } catch (e) {
-      print("Permission error: $e");
-      _showPermissionErrorDialog(e.toString());
-      return false;
     }
+    return true;
   }
 
-  Future<bool> _showPermissionExplanationDialog() async {
-    return await showDialog<bool>(
+  void _showPermissionDialog() {
+    showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (context) =>
-          AlertDialog(
-            title: Text('Storage Permission Needed'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('This app needs storage permission to:'),
-                SizedBox(height: 8),
-                Text('• Save PDF reports to your device'),
-                Text('• Allow you to access generated reports'),
-                SizedBox(height: 12),
-                Text('Please allow storage access in the next dialog.'),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: Text('Continue'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: const Text('Storage Permission Required'),
+        content: const Text('Please grant storage permission to save PDF reports.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
           ),
-    ) ?? false;
-  }
-
-  void _showPermissionGrantedMessage() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-            'Storage permission granted! You can now generate PDF reports.'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 2),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await openAppSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
       ),
     );
   }
 
-  void _showPermissionDeniedDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) =>
-          AlertDialog(
-            title: Text('Permission Denied'),
-            content: Text(
-              'Storage permission was denied. PDF reports cannot be saved without this permission.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  Navigator.of(context).pop();
-                  // Try requesting permission again
-                  await _checkAndRequestStoragePermission();
-                },
-                child: Text('Try Again'),
-              ),
-            ],
-          ),
-    );
-  }
-
-  void _showPermissionPermanentlyDeniedDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) =>
-          AlertDialog(
-            title: Text('Permission Required'),
-            content: Text(
-              'Storage permission has been permanently denied. Please enable it manually in app settings to generate PDF reports.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  Navigator.of(context).pop();
-                  await openAppSettings();
-
-                  // Check permission again after user returns from settings
-                  Future.delayed(Duration(seconds: 1), () async {
-                    final hasPermission = await _checkAndRequestStoragePermission();
-                    if (hasPermission) {
-                      _showPermissionGrantedMessage();
-                    }
-                  });
-                },
-                child: Text('Open Settings'),
-              ),
-            ],
-          ),
-    );
-  }
-
-  void _showPermissionErrorDialog(String error) {
-    showDialog(
-      context: context,
-      builder: (context) =>
-          AlertDialog(
-            title: Text('Permission Error'),
-            content: Text(
-                'An error occurred while requesting storage permission:\n$error'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: Text('OK'),
-              ),
-            ],
-          ),
-    );
-  }
-
-  void _showReportFilterDialog(BuildContext context) async {
+  void _showReportDialog() {
     DateTime? fromDate;
     DateTime? toDate;
     String type = "Both";
-    List<String> products = [];
-    List<String> selectedProducts = [];
-    bool allProductsSelected = true;
-
-    try {
-      // Fetch all product names for the checkbox list
-      final stockSnapshot = await FirebaseFirestore.instance
-          .collection("stocks")
-          .where("user", isEqualTo: user.uid)
-          .get();
-      products =
-          stockSnapshot.docs.map((doc) => doc['product'].toString()).toList();
-      // Initially select all products
-      selectedProducts = List.from(products);
-      print("Found ${products.length} products");
-    } catch (e) {
-      print("Error fetching products: $e");
-    }
 
     showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text("Generate PDF Report"),
-          content: StatefulBuilder(
-            builder: (context, setState) =>
-                Container(
-                  width: double.maxFinite,
-                  height: MediaQuery
-                      .of(context)
-                      .size
-                      .height * 0.6, // 60% of screen height
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // From Date Picker
-                        ListTile(
-                          title: Text(fromDate == null
-                              ? "Select From Date"
-                              : "From: ${fromDate!.day}/${fromDate!
-                              .month}/${fromDate!.year}"),
-                          trailing: Icon(Icons.calendar_today),
-                          onTap: () async {
-                            final picked = await showDatePicker(
-                              context: context,
-                              initialDate: DateTime.now(),
-                              firstDate: DateTime(2020),
-                              lastDate: DateTime(2100),
-                            );
-                            if (picked != null) setState(() =>
-                            fromDate = picked);
-                          },
-                        ),
-
-                        // To Date Picker
-                        ListTile(
-                          title: Text(toDate == null
-                              ? "Select To Date"
-                              : "To: ${toDate!.day}/${toDate!.month}/${toDate!
-                              .year}"),
-                          trailing: Icon(Icons.calendar_today),
-                          onTap: () async {
-                            final picked = await showDatePicker(
-                              context: context,
-                              initialDate: DateTime.now(),
-                              firstDate: DateTime(2020),
-                              lastDate: DateTime(2100),
-                            );
-                            if (picked != null) setState(() => toDate = picked);
-                          },
-                        ),
-
-                        SizedBox(height: 16),
-
-                        // Product Selection Section
-                        Text(
-                          'Select Products:',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        SizedBox(height: 8),
-
-                        // All Products Checkbox
-                        CheckboxListTile(
-                          title: Text(
-                            'All Products',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.indigo,
-                            ),
-                          ),
-                          value: allProductsSelected,
-                          onChanged: (bool? value) {
-                            setState(() {
-                              allProductsSelected = value ?? false;
-                              if (allProductsSelected) {
-                                selectedProducts = List.from(products);
-                              } else {
-                                selectedProducts.clear();
-                              }
-                            });
-                          },
-                          controlAffinity: ListTileControlAffinity.leading,
-                        ),
-
-                        Divider(),
-
-                        // Individual Product Checkboxes (Scrollable)
-                        Container(
-                          height: 200, // Fixed height for scrollable area
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: products.isEmpty
-                              ? Center(
-                            child: Text(
-                              'No products found',
-                              style: TextStyle(color: Colors.grey),
-                            ),
-                          )
-                              : ListView.builder(
-                            itemCount: products.length,
-                            itemBuilder: (context, index) {
-                              final product = products[index];
-                              return CheckboxListTile(
-                                title: Text(product),
-                                value: selectedProducts.contains(product),
-                                onChanged: (bool? value) {
-                                  setState(() {
-                                    if (value == true) {
-                                      if (!selectedProducts.contains(product)) {
-                                        selectedProducts.add(product);
-                                      }
-                                    } else {
-                                      selectedProducts.remove(product);
-                                    }
-
-                                    // Update "All Products" checkbox state
-                                    allProductsSelected =
-                                        selectedProducts.length ==
-                                            products.length;
-                                  });
-                                },
-                                controlAffinity: ListTileControlAffinity
-                                    .leading,
-                                dense: true,
-                              );
-                            },
-                          ),
-                        ),
-
-                        SizedBox(height: 16),
-
-                        // Selected count display
-                        Text(
-                          'Selected: ${selectedProducts.length} of ${products
-                              .length} products',
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 12,
-                          ),
-                        ),
-
-                        SizedBox(height: 16),
-
-                        // Type dropdown
-                        Row(
-                          children: [
-                            Text("Transaction Type: "),
-                            SizedBox(width: 16),
-                            Expanded(
-                              child: DropdownButton<String>(
-                                value: type,
-                                isExpanded: true,
-                                items: [
-                                  DropdownMenuItem(value: "Purchase",
-                                      child: Text("Purchase")),
-                                  DropdownMenuItem(
-                                      value: "Sale", child: Text("Sale")),
-                                  DropdownMenuItem(
-                                      value: "Both", child: Text("Both")),
-                                ],
-                                onChanged: (val) {
-                                  setState(() {
-                                    if (val != null) type = val;
-                                  });
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text("Generate PDF Report"),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  ListTile(
+                    title: Text(fromDate == null 
+                        ? "Select From Date" 
+                        : "From: ${DateFormat('dd/MM/yyyy').format(fromDate!)}"),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) setState(() => fromDate = picked);
+                    },
                   ),
-                ),
+                  ListTile(
+                    title: Text(toDate == null 
+                        ? "Select To Date" 
+                        : "To: ${DateFormat('dd/MM/yyyy').format(toDate!)}"),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) setState(() => toDate = picked);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: type,
+                    decoration: const InputDecoration(
+                      labelText: "Transaction Type",
+                      border: OutlineInputBorder(),
+                    ),
+                    items: ["Purchase", "Sale", "Both"]
+                        .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                        .toList(),
+                    onChanged: (value) => setState(() => type = value ?? "Both"),
+                  ),
+                ],
+              ),
+            ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text("Cancel"),
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
             ),
             ElevatedButton(
               onPressed: () {
                 if (fromDate == null || toDate == null) {
-                  Fluttertoast.showToast(
-                      msg: "Please select From and To dates",
-                      toastLength: Toast.LENGTH_SHORT,
-                      gravity: ToastGravity.BOTTOM,
-                      timeInSecForIosWeb: 2,
-                      backgroundColor: Colors.red,
-                      // Or your preferred color
-                      textColor: Colors.white,
-                      fontSize: 16.0
-                  );
-
+                  AppUtils.showWarning("Please select both dates");
                   return;
                 }
-
-                if (selectedProducts.isEmpty) {
-                  Fluttertoast.showToast(
-                      msg: "Please select at least one product",
-                      toastLength: Toast.LENGTH_SHORT,
-                      gravity: ToastGravity.BOTTOM,
-                      timeInSecForIosWeb: 2,
-                      backgroundColor: Colors.red,
-                      // Or your preferred color
-                      textColor: Colors.white,
-                      fontSize: 16.0
-                  );
-
-                  return;
-                }
-
-                Navigator.of(context).pop();
-                _generateReportPDF(
-                  from: fromDate!,
-                  to: toDate!,
-                  type: type,
-                  selectedProducts: selectedProducts,
-                );
+                Navigator.pop(context);
+                _generateReport(fromDate!, toDate!, type);
               },
-              child: Text("Generate"),
+              child: const Text("Generate"),
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 
-  Future<void> _generateReportPDF({
-    required DateTime from,
-    required DateTime to,
-    required String type,
-    List<String>? selectedProducts,
-  }) async {
-    print(
-        "Starting PDF generation process with from: $from, to: $to type: $type products: $selectedProducts");
+  Future<void> _generateReport(DateTime from, DateTime to, String type) async {
+    if (!await _checkStoragePermission()) return;
 
-    // 1. Check permission FIRST
-    bool hasPermission = await _checkAndRequestStoragePermission();
-    if (!hasPermission) {
-      Fluttertoast.showToast(
-          msg: "Storage permission is required for PDF export.",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-          timeInSecForIosWeb: 2,
-          backgroundColor: Colors.red,
-          // Or your preferred color
-          textColor: Colors.white,
-          fontSize: 16.0
-      );
-
-      return;
-    }
-
-    // 2. Show loading dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) =>
-          AlertDialog(
-            content: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(width: 20),
-                Text("Generating PDF report..."),
-              ],
-            ),
-          ),
-    );
+    LoadingDialog.show(context, "Generating PDF report...");
 
     try {
-      // 3. Run Firestore query on 'timestamp' field
-      final QuerySnapshot snapshot = await FirebaseFirestore.instance
+      final snapshot = await FirebaseFirestore.instance
           .collection("transactions")
           .where("user", isEqualTo: user.uid)
           .where("timestamp", isGreaterThanOrEqualTo: Timestamp.fromDate(from))
           .where("timestamp", isLessThanOrEqualTo: Timestamp.fromDate(to))
           .get();
 
-      print("Fetched ${snapshot.docs.length} documents from Firestore.");
-
       if (snapshot.docs.isEmpty) {
-        if (Navigator.canPop(context)) Navigator.pop(context);
-        Fluttertoast.showToast(
-            msg: "No transactions found in selected range.",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            timeInSecForIosWeb: 2,
-            backgroundColor: Colors.red,
-            // Or your preferred color
-            textColor: Colors.white,
-            fontSize: 16.0
-        );
-
+        LoadingDialog.hide(context);
+        AppUtils.showWarning("No transactions found in selected range");
         return;
       }
 
-      // 4. Filter results as needed
       final filtered = snapshot.docs.where((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-
-        // Filter by selected products (if not all products selected)
-        if (selectedProducts != null && selectedProducts.isNotEmpty) {
-          if (!selectedProducts.contains(data['product'])) return false;
-        }
-
-        // Filter by transaction type
-        if (type != "Both" && data['type'] != type) return false;
-
-        return true;
+        final data = doc.data();
+        return type == "Both" || data['type'] == type;
       }).toList();
 
-      print("After filter: ${filtered.length} records remain.");
-
       if (filtered.isEmpty) {
-        if (Navigator.canPop(context)) Navigator.pop(context);
-        Fluttertoast.showToast(
-            msg: "No matching transactions after filter.",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            timeInSecForIosWeb: 2,
-            backgroundColor: Colors.red,
-            // Or your preferred color
-            textColor: Colors.white,
-            fontSize: 16.0
-        );
-
+        LoadingDialog.hide(context);
+        AppUtils.showWarning("No matching transactions found");
         return;
       }
 
-      // 5. Sum totals robustly
+      // Calculate totals
       double totalPurchase = 0;
       double totalSales = 0;
+
       for (var doc in filtered) {
-        final data = doc.data() as Map<String, dynamic>;
-        final qty = (data['quantity'] as int?) ?? 0;
-        final price = (data['unitPrice'] as num?)?.toDouble() ?? 0.0;
-        final amount = qty * price;
-        if (data['type'] == "Purchase") totalPurchase += amount;
-        if (data['type'] == "Sale") totalSales += amount;
-      }
-
-      if (kDebugMode) {
-        print("TotalPurchase: $totalPurchase, TotalSales: $totalSales");
-      }
-
-      String productFilter = "All Products";
-      if (selectedProducts != null && selectedProducts.isNotEmpty) {
-        if (selectedProducts.length == 1) {
-          productFilter = selectedProducts.first;
-        } else {
-          productFilter = "${selectedProducts.length} selected products";
+        final data = doc.data();
+        final products = data['product'] as List? ?? [];
+        for (var product in products) {
+          if (product is Map) {
+            final qty = (product['quantity'] as num?)?.toInt() ?? 0;
+            final price = (product['unitPrice'] as num?)?.toDouble() ?? 0.0;
+            final amount = qty * price;
+            
+            if (data['type'] == "Purchase") totalPurchase += amount;
+            if (data['type'] == "Sale") totalSales += amount;
+          }
         }
       }
-
 
       final reportData = {
         "from": from,
         "to": to,
-        "product": productFilter,
+        "product": "All Products",
         "transactions": filtered.map((doc) => doc.data()).toList(),
         "totalPurchase": totalPurchase,
         "totalSales": totalSales,
         "type": type,
       };
 
-      // 6. Generate PDF (await!)
       final pdfPath = await ReportGenerator.generateReport(reportData);
-      print("PDF file generated at $pdfPath");
+      LoadingDialog.hide(context);
+      
+      await OpenFile.open(pdfPath);
+      AppUtils.showSuccess("Report generated successfully");
 
-      if (Navigator.canPop(context)) Navigator.pop(context); // close dialog
-
-      final openResult = await OpenFile.open(pdfPath);
-      print("OpenFile.open result: ${openResult.type}");
-    } catch (e, stack) {
-      print("Error in PDF export: $e $stack");
-      if (Navigator.canPop(context)) Navigator.pop(context);
-      Fluttertoast.showToast(
-          msg: "Failed: $e",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-          timeInSecForIosWeb: 2,
-          backgroundColor: Colors.red,
-          // Or your preferred color
-          textColor: Colors.white,
-          fontSize: 16.0
-      );
+    } catch (e) {
+      LoadingDialog.hide(context);
+      AppUtils.showError("Failed to generate report: $e");
     }
   }
 
@@ -668,105 +225,63 @@ class _DashboardState extends State<Dashboard> {
     try {
       await FirebaseAuth.instance.signOut();
     } catch (e) {
-      Fluttertoast.showToast(
-          msg: "Error logging out. Please try again.",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-          timeInSecForIosWeb: 2,
-          backgroundColor: Colors.red,
-          // Or your preferred color
-          textColor: Colors.white,
-          fontSize: 16.0
-      );
+      AppUtils.showError("Error logging out. Please try again.");
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
-      onWillPop: _showExitDialog,
+      onWillPop: () async {
+        return await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Exit App'),
+            content: const Text('Are you sure you want to exit?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('No'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Yes'),
+              ),
+            ],
+          ),
+        ) ?? false;
+      },
       child: Scaffold(
         backgroundColor: Colors.grey[100],
-        appBar: AppBar(
-          backgroundColor: Colors.indigo,
-          automaticallyImplyLeading: false,
-          title: Text("Dashboard"),
-          titleTextStyle: TextStyle(fontSize: 22, color: Colors.white),
-          actions: [
-            IconButton(
-              icon: Icon(Icons.description, color: Colors.white),
-              tooltip: "Generate Report",
-              onPressed: () {
-                _showReportFilterDialog(context);
-              },
-            ),
-            IconButton(
-              icon: Icon(Icons.account_circle, size: 28, color: Colors.white),
-              tooltip: 'Profile',
-              onPressed: () =>
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => Profile()),
-                  ),
-            ),
-            PopupMenuButton(
-              onSelected: (value) {
-                if (value == 'logout') _logout();
-              },
-              itemBuilder: (context) =>
-              [
-                PopupMenuItem(
-                  enabled: false,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Logged in as:', style: TextStyle(
-                          fontSize: 12, color: Colors.grey[600])),
-                      Text(user.email ?? 'Unknown', style: TextStyle(
-                          fontWeight: FontWeight.bold, color: Colors.black)),
-                      Divider(),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'logout',
-                  child: Row(
-                    children: [
-                      Icon(Icons.logout, color: Colors.red),
-                      SizedBox(width: 8),
-                      Text('Logout'),
-                    ],
-                  ),
-                ),
-              ],
-              child: Padding(
-                padding: EdgeInsets.all(8.0),
-                child: Icon(Icons.more_vert, size: 24, color: Colors.white),
-              ),
-            ),
-          ],
-        ),
+        appBar: _buildAppBar(),
         body: SingleChildScrollView(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           child: Column(
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [_buildLowStockCard(), _buildStockCard()],
+                children: [
+                  Expanded(child: _buildLowStockCard()),
+                  Expanded(child: _buildStockCard()),
+                ],
               ),
-              SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [_buildsuppliersCard(), _buildcustomerCard()],
-              ),
-              SizedBox(height: 30),
+              const SizedBox(height: 16),
               Row(
                 children: [
-                  _buildSectionTitle("Recent Transactions"),
-                  Spacer(),
+                  Expanded(child: _buildSuppliersCard()),
+                  Expanded(child: _buildCustomersCard()),
+                ],
+              ),
+              const SizedBox(height: 30),
+              Row(
+                children: [
+                  const Text(
+                    "Recent Transactions",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
                   TextButton(
                     onPressed: () => widget.onTabChange?.call(2),
-                    child: Text("View More "),
+                    child: const Text("View More"),
                   ),
                 ],
               ),
@@ -774,6 +289,130 @@ class _DashboardState extends State<Dashboard> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: Colors.indigo,
+      automaticallyImplyLeading: false,
+      title: const Text("Dashboard"),
+      titleTextStyle: const TextStyle(fontSize: 22, color: Colors.white),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.description, color: Colors.white),
+          onPressed: _showReportDialog,
+          tooltip: "Generate Report",
+        ),
+        IconButton(
+          icon: const Icon(Icons.account_circle, color: Colors.white),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const Profile()),
+          ),
+          tooltip: 'Profile',
+        ),
+        PopupMenuButton(
+          onSelected: (value) {
+            if (value == 'logout') _logout();
+          },
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              enabled: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Logged in as:',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                  Text(
+                    user.email ?? 'Unknown',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const Divider(),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'logout',
+              child: Row(
+                children: [
+                  Icon(Icons.logout, color: Colors.red),
+                  SizedBox(width: 8),
+                  Text('Logout'),
+                ],
+              ),
+            ),
+          ],
+          child: const Padding(
+            padding: EdgeInsets.all(8.0),
+            child: Icon(Icons.more_vert, color: Colors.white),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLowStockCard() {
+    return StatsCard(
+      title: "Low Stock",
+      icon: Icons.warning,
+      color: Colors.redAccent,
+      stream: FirebaseFirestore.instance
+          .collection("stocks")
+          .where('quantity', isLessThanOrEqualTo: 10)
+          .where("user", isEqualTo: user.uid)
+          .snapshots(),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const LowStocks()),
+      ),
+    );
+  }
+
+  Widget _buildStockCard() {
+    return StatsCard(
+      title: "Stock",
+      icon: Icons.shopping_cart,
+      color: Colors.indigo,
+      stream: FirebaseFirestore.instance
+          .collection("stocks")
+          .where("user", isEqualTo: user.uid)
+          .snapshots(),
+      onTap: () => widget.onTabChange?.call(1),
+    );
+  }
+
+  Widget _buildSuppliersCard() {
+    return StatsCard(
+      title: "Suppliers",
+      icon: Icons.local_shipping,
+      color: Colors.orange,
+      stream: FirebaseFirestore.instance
+          .collection("suppliers")
+          .where("user", isEqualTo: user.uid)
+          .snapshots(),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const PartyScreen(partyType: PartyType.supplier)),
+      ),
+    );
+  }
+
+  Widget _buildCustomersCard() {
+    return StatsCard(
+      title: "Customers",
+      icon: Icons.account_circle,
+      color: Colors.green,
+      stream: FirebaseFirestore.instance
+          .collection("customers")
+          .where("user", isEqualTo: user.uid)
+          .snapshots(),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const PartyScreen(partyType: PartyType.customer)),
       ),
     );
   }
@@ -788,7 +427,7 @@ class _DashboardState extends State<Dashboard> {
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator());
+          return const Center(child: CircularProgressIndicator());
         }
 
         if (snapshot.hasError) {
@@ -796,7 +435,7 @@ class _DashboardState extends State<Dashboard> {
         }
 
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return Center(
+          return const Center(
             child: Column(
               children: [
                 Icon(Icons.receipt_long, color: Colors.grey, size: 48),
@@ -807,335 +446,82 @@ class _DashboardState extends State<Dashboard> {
           );
         }
 
-        final transactions = snapshot.data!.docs.map((doc) {
-          try {
-            final data = doc.data();
-            if (data == null) {
-              return {
-                "title": "Error: No data",
-                "amount": "₹0.00",
-                "timestamp": "No Date",
-                "type": "Unknown",
-              };
-            }
-
-            final dataMap = Map<String, dynamic>.from(data as Map);
-
-            // Safely get the first product name from the product array
-            String productName = _getFirstProductNameFromData(dataMap);
-
-            // Safely calculate total amount from all products in the array
-            double totalAmount = _getTotalAmountFromData(dataMap);
-
-            // Safely get transaction type
-            final type = dataMap['type']?.toString() ?? 'Unknown';
-
-            // Safely get date
-            String dateString = "No Date";
-            try {
-              final timestampField = dataMap['timestamp'];
-              if (timestampField != null && timestampField is Timestamp) {
-                dateString =
-                    DateFormat('dd-MM-yyyy').format(timestampField.toDate());
-              }
-            } catch (e) {
-              print("Error parsing timestamp: $e");
-            }
-
-            return {
-              "title": productName,
-              "amount": "₹${totalAmount.toStringAsFixed(2)}",
-              "timestamp": dateString,
-              "type": type,
-            };
-          } catch (e) {
-            print("Error processing transaction doc: $e");
-            return {
-              "title": "Error loading transaction",
-              "amount": "₹0.00",
-              "timestamp": "No Date",
-              "type": "Unknown",
-            };
-          }
-        }).toList();
-
-        return _buildRecentList(transactions);
+        return Column(
+          children: snapshot.data!.docs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return _buildTransactionCard(data);
+          }).toList(),
+        );
       },
     );
   }
 
-// Helper method to safely get the first product name from product array
-  String _getFirstProductNameFromData(Map<String, dynamic> data) {
+  Widget _buildTransactionCard(Map<String, dynamic> data) {
     try {
-      final product = data['product'] as List<dynamic>? ?? [];
-
-      if (product.isNotEmpty && product[0] != null) {
-        final firstProduct = Map<String, dynamic>.from(product[0] as Map);
-        final productName = firstProduct['product']?.toString() ??
-            'Unknown Product';
-
-        // If there are multiple products, show count
-        if (product.length > 1) {
-          return "$productName (+${product.length - 1} more)";
-        }
-        return productName;
-      }
-      return 'No Products';
-    } catch (e) {
-      print("Error getting first product name: $e");
-      return 'Error Loading Product';
-    }
-  }
-
-// Helper method to safely calculate total amount from product array
-  double _getTotalAmountFromData(Map<String, dynamic> data) {
-    try {
-      final product = data['product'] as List<dynamic>? ?? [];
-
+      final type = data['type']?.toString() ?? 'Unknown';
+      final party = data['party']?.toString() ?? 'Unknown';
+      final products = data['product'] as List? ?? [];
+      
+      String productName = 'No Products';
       double totalAmount = 0.0;
-      for (var item in product) {
-        if (item != null) {
-          final itemMap = Map<String, dynamic>.from(item as Map);
-          final quantity = (itemMap['quantity'] as num?)?.toInt() ?? 0;
-          final unitPrice = (itemMap['unitPrice'] as num?)?.toDouble() ?? 0.0;
-          totalAmount += quantity * unitPrice;
+      
+      if (products.isNotEmpty && products[0] != null) {
+        final firstProduct = products[0] as Map<String, dynamic>;
+        productName = firstProduct['product']?.toString() ?? 'Unknown Product';
+        
+        for (var product in products) {
+          if (product != null) {
+            final productMap = product as Map<String, dynamic>;
+            final quantity = (productMap['quantity'] as num?)?.toInt() ?? 0;
+            final unitPrice = (productMap['unitPrice'] as num?)?.toDouble() ?? 0.0;
+            totalAmount += quantity * unitPrice;
+          }
+        }
+        
+        if (products.length > 1) {
+          productName = "$productName (+${products.length - 1} more)";
         }
       }
-      return totalAmount;
-    } catch (e) {
-      print("Error calculating total amount: $e");
-      return 0.0;
-    }
-  }
 
+      final timestamp = data['timestamp'];
+      String dateString = "No Date";
+      if (timestamp is Timestamp) {
+        dateString = DateFormat('dd-MM-yyyy').format(timestamp.toDate());
+      }
 
-  Widget _buildLowStockCard() {
-    return Expanded(
-      child: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection("stocks")
-            .where('quantity', isLessThanOrEqualTo: 10)
-            .where("user", isEqualTo: user.uid)
-            .snapshots(),
-        builder: (context, snapshot) {
-          final lowStockCount = snapshot.hasData
-              ? snapshot.data!.docs.length
-              : 0;
-          return GestureDetector(
-            onTap: () =>
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const LowStocks()),
-                ),
-            child: Card(
-              elevation: 3,
-              margin: EdgeInsets.all(8),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 20, horizontal: 12),
-                child: Column(
-                  children: [
-                    Icon(Icons.warning, color: Colors.redAccent, size: 30),
-                    SizedBox(height: 10),
-                    Text("Low Stock", style: TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600)),
-                    SizedBox(height: 6),
-                    Text(lowStockCount.toString(),
-                        style: TextStyle(fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.redAccent)),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildsuppliersCard() {
-    return Expanded(
-      child: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection("suppliers")
-            .where("user", isEqualTo: user.uid)
-            .snapshots(),
-        builder: (context, snapshot) {
-          final supplierCount = snapshot.hasData
-              ? snapshot.data!.docs.length
-              : 0;
-          return GestureDetector(
-            onTap: () =>
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => const SupplierScreen()),
-                ),
-            child: Card(
-              elevation: 3,
-              margin: EdgeInsets.all(8),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 20, horizontal: 12),
-                child: Column(
-                  children: [
-                    Icon(Icons.local_shipping, color: Colors.orange, size: 30),
-                    SizedBox(height: 10),
-                    Text("Suppliers", style: TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600)),
-                    SizedBox(height: 6),
-                    Text(supplierCount.toString(),
-                        style: TextStyle(fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.orange)),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildcustomerCard() {
-    return Expanded(
-      child: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection("customers")
-            .where("user", isEqualTo: user.uid)
-            .snapshots(),
-        builder: (context, snapshot) {
-          final customerCount = snapshot.hasData
-              ? snapshot.data!.docs.length
-              : 0;
-          return GestureDetector(
-            onTap: () =>
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => const CustomerScreen()),
-                ),
-            child: Card(
-              elevation: 3,
-              margin: EdgeInsets.all(8),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 20, horizontal: 12),
-                child: Column(
-                  children: [
-                    Icon(Icons.account_circle, color: Colors.green, size: 30),
-                    SizedBox(height: 10),
-                    Text("Customer", style: TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600)),
-                    SizedBox(height: 6),
-                    Text(customerCount.toString(),
-                        style: TextStyle(fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green)),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildStockCard() {
-    return Expanded(
-      child: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection("stocks").where(
-            "user", isEqualTo: user.uid).snapshots(),
-        builder: (context, snapshot) {
-          final totalStockCount = snapshot.hasData
-              ? snapshot.data!.docs.length
-              : 0;
-          return GestureDetector(
-            onTap: () => widget.onTabChange?.call(1),
-            child: Card(
-              elevation: 3,
-              margin: EdgeInsets.all(8),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 20, horizontal: 12),
-                child: Column(
-                  children: [
-                    Icon(Icons.shopping_cart, color: Colors.indigo, size: 30),
-                    SizedBox(height: 10),
-                    Text("Stock", style: TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600)),
-                    SizedBox(height: 6),
-                    Text(totalStockCount.toString(),
-                        style: TextStyle(fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.indigo)),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle(String title) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-          title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-    );
-  }
-
-  Widget _buildRecentList(List<Map<String, dynamic>> items) {
-    return Column(
-      children: items.map((item) {
-        final isPurchase = item['type'] == 'Purchase';
-
-        return Card(
-          margin: EdgeInsets.symmetric(vertical: 6),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-          elevation: 2,
-          child: ListTile(
-            leading: Container(
-              padding: EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: isPurchase ? Colors.green.shade100 : Colors.red.shade100,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                isPurchase ? Icons.trending_up : Icons.trending_down,
-                color: isPurchase ? Colors.green.shade700 : Colors.red.shade700,
-                size: 16,
-              ),
-            ),
-            title: Text(
-              item['title'] ?? "",
-              style: TextStyle(fontWeight: FontWeight.w600),
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Text(
-              item['timestamp'] ?? "",
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
-            trailing: Text(
-              item['amount'] ?? "",
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isPurchase ? Colors.green.shade700 : Colors.red.shade700,
-              ),
+      return Card(
+        margin: const EdgeInsets.only(bottom: 8),
+        child: ListTile(
+          leading: CircleAvatar(
+            backgroundColor: type == 'Purchase' ? Colors.green : Colors.red,
+            child: Icon(
+              type == 'Purchase' ? Icons.trending_up : Icons.trending_down,
+              color: Colors.white,
             ),
           ),
-        );
-      }).toList(),
-    );
+          title: Text(AppUtils.capitalize(productName)),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${type == 'Purchase' ? 'Supplier' : 'Customer'}: $party'),
+              Text('Date: $dateString'),
+            ],
+          ),
+          trailing: Text(
+            '₹${totalAmount.toStringAsFixed(2)}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    } catch (e) {
+      return Card(
+        margin: const EdgeInsets.only(bottom: 8),
+        child: ListTile(
+          leading: const Icon(Icons.error, color: Colors.red),
+          title: const Text('Error loading transaction'),
+          subtitle: Text('Error: $e'),
+        ),
+      );
+    }
   }
 }

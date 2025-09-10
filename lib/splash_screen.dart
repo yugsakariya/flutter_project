@@ -65,7 +65,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       // Check connectivity first
       final connectivityResult = await Connectivity().checkConnectivity();
 
-      if (connectivityResult.first == ConnectivityResult.none) {
+      if (connectivityResult == ConnectivityResult.none) {
         setState(() {
           _statusMessage = 'No internet connection';
           _statusColor = Colors.red;

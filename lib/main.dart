@@ -10,7 +10,6 @@ import 'package:flutter_project/login.dart';
 import 'package:flutter_project/splash_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
 import 'BillScreen.dart';
 
 void main() async {
@@ -28,12 +27,6 @@ class MyMainApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Inventory Management',
-      theme: ThemeData(
-        primarySwatch: Colors.indigo,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
-      // Set splash screen as initial route
       initialRoute: '/',
       routes: {
         '/': (context) => const SplashScreen(),
@@ -56,9 +49,11 @@ class AuthWrapper extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const SplashScreen();
         }
+
         if (snapshot.hasData && snapshot.data != null) {
           return const MyApp();
         }
+
         return const Loginscreen();
       },
     );
@@ -75,7 +70,7 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   int _selectedIndex = 0;
   bool _isConnected = true;
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  StreamSubscription<ConnectivityResult>? _connectivitySubscription;
 
   @override
   void initState() {
@@ -84,20 +79,25 @@ class _MyAppState extends State<MyApp> {
     _startConnectivityListener();
   }
 
-  void _checkConnectivity() async {
+  @override
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkConnectivity() async {
     try {
       final result = await Connectivity().checkConnectivity();
-      final hasConnection = result.first != ConnectivityResult.none;
-
+      final hasConnection = result != ConnectivityResult.none;
+      
       if (hasConnection) {
-        // Simple internet check
         final hasInternet = await _hasInternetConnection();
-        setState(() => _isConnected = hasInternet);
+        if (mounted) setState(() => _isConnected = hasInternet);
       } else {
-        setState(() => _isConnected = false);
+        if (mounted) setState(() => _isConnected = false);
       }
     } catch (e) {
-      setState(() => _isConnected = false);
+      if (mounted) setState(() => _isConnected = false);
     }
   }
 
@@ -113,38 +113,20 @@ class _MyAppState extends State<MyApp> {
 
   void _startConnectivityListener() {
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((result) {
-      final hasConnection = result.first != ConnectivityResult.none;
+      final hasConnection = result != ConnectivityResult.none;
       if (hasConnection) {
         _hasInternetConnection().then((hasInternet) {
-          if (mounted) {
-            setState(() => _isConnected = hasInternet);
-          }
+          if (mounted) setState(() => _isConnected = hasInternet);
         });
       } else {
-        if (mounted) {
-          setState(() => _isConnected = false);
-        }
+        if (mounted) setState(() => _isConnected = false);
       }
     });
   }
 
-  @override
-  void dispose() {
-    _connectivitySubscription?.cancel();
-    super.dispose();
-  }
-
-  void _goToDashboard() {
-    setState(() => _selectedIndex = 0);
-  }
-
-  void _onItemTapped(int index) {
-    setState(() => _selectedIndex = index);
-  }
-
-  void _retryConnection() {
-    _checkConnectivity();
-  }
+  void _goToDashboard() => setState(() => _selectedIndex = 0);
+  void _onItemTapped(int index) => setState(() => _selectedIndex = index);
+  void _retryConnection() => _checkConnectivity();
 
   @override
   Widget build(BuildContext context) {
@@ -156,9 +138,7 @@ class _MyAppState extends State<MyApp> {
     ];
 
     return Scaffold(
-      body: _isConnected
-          ? pages[_selectedIndex]
-          : _buildNoConnectionScreen(),
+      body: _isConnected ? pages[_selectedIndex] : _buildNoConnectionScreen(),
       bottomNavigationBar: _isConnected ? _buildBottomNavBar() : null,
     );
   }
