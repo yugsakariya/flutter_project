@@ -25,22 +25,71 @@ class _TransactionScreenState extends State<TransactionScreen> {
     super.dispose();
   }
 
-  // Get transaction stream with optional search
+  // APPROACH 1: Server-side filtering with array-contains
   Stream<QuerySnapshot> _getTransactionStream() {
     if (user == null) return const Stream.empty();
 
     var query = FirebaseFirestore.instance
         .collection('transactions')
-        .where('user', isEqualTo: user!.uid)
-        .orderBy("timestamp", descending: true);
+        .where('user', isEqualTo: user!.uid);
 
     if (_searchQuery.isNotEmpty) {
-      query = query
-          .where('party', isGreaterThanOrEqualTo: _searchQuery.toLowerCase())
-          .where('party', isLessThanOrEqualTo: '${_searchQuery.toLowerCase()}\uf8ff');
-    }
+      print("🔍 Searching for: '${_searchQuery.toLowerCase()}'"); // Debug print
 
-    return query.snapshots();
+      return query
+          .where('product_names', arrayContains: _searchQuery.toLowerCase().trim())
+          .orderBy('timestamp', descending: true)
+          .snapshots();
+    } else {
+      return query
+          .orderBy('timestamp', descending: true)
+          .snapshots();
+    }
+  }
+
+  // Hybrid approach: Try server-side first, fallback to client-side
+  Stream<List<DocumentSnapshot>> _getHybridTransactionStream() {
+    if (user == null) return Stream.value([]);
+
+    return _getTransactionStream().asyncMap((snapshot) async {
+      final docs = snapshot.docs;
+
+      // If no search query, return all docs
+      if (_searchQuery.isEmpty) {
+        return docs;
+      }
+
+      // If server-side search found results, use them
+      if (docs.isNotEmpty) {
+        print("✅ Server-side search found ${docs.length} results");
+        return docs;
+      }
+
+      // Fallback: Client-side search for partial matches
+      print("🔄 Fallback to client-side search for partial matches");
+      final allDocsSnapshot = await FirebaseFirestore.instance
+          .collection('transactions')
+          .where('user', isEqualTo: user!.uid)
+          .orderBy('timestamp', descending: true)
+          .get();
+
+      final searchLower = _searchQuery.toLowerCase().trim();
+      final filteredDocs = allDocsSnapshot.docs.where((doc) {
+        final data = doc.data();
+        final products = data['product'] as List<dynamic>? ?? [];
+
+        return products.any((product) {
+          if (product is Map<String, dynamic>) {
+            final productName = product['product']?.toString().toLowerCase() ?? '';
+            return productName.contains(searchLower);
+          }
+          return false;
+        });
+      }).toList();
+
+      print("🔍 Client-side search found ${filteredDocs.length} results");
+      return filteredDocs;
+    });
   }
 
   // Show update dialog
@@ -80,7 +129,6 @@ class _TransactionScreenState extends State<TransactionScreen> {
           .collection('transactions')
           .doc(docId)
           .get();
-
       if (!transactionDoc.exists) {
         _showToast("Transaction not found", Colors.red);
         return;
@@ -93,8 +141,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
       }
 
       final type = data['type']?.toString() ?? '';
-      final product = data['product'] as List<dynamic>? ?? [];
-
+      final product = data['product'] as List? ?? [];
       if (type.isEmpty) {
         _showToast("Invalid transaction type", Colors.red);
         return;
@@ -111,14 +158,11 @@ class _TransactionScreenState extends State<TransactionScreen> {
       // Process each product for stock updates
       for (var item in product) {
         if (item == null) continue;
-
         final itemMap = Map<String, dynamic>.from(item as Map);
-
         final productName = itemMap['product']?.toString() ?? '';
         final quantity = (itemMap['quantity'] as num?)?.toInt() ?? 0;
 
         if (productName.isEmpty || quantity <= 0) continue;
-
         print("Processing product: Product=$productName, Quantity=$quantity");
 
         // Find corresponding stock document
@@ -151,10 +195,8 @@ class _TransactionScreenState extends State<TransactionScreen> {
         bool hasOtherTransactions = false;
         for (var doc in allTransactionsQuery.docs) {
           if (doc.id == docId) continue; // Skip current transaction
-
           final docData = doc.data();
-          final docProduct = docData['product'] as List<dynamic>? ?? [];
-
+          final docProduct = docData['product'] as List? ?? [];
           for (var docItem in docProduct) {
             if (docItem != null) {
               final docItemMap = Map<String, dynamic>.from(docItem as Map);
@@ -194,6 +236,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
       if (Navigator.canPop(context)) {
         Navigator.of(context).pop();
       }
+
       _showToast("Transaction deleted successfully", Colors.green);
     } catch (error) {
       print("Error deleting transaction: $error");
@@ -216,8 +259,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
   // Helper method to safely get the first product name from product array
   String _getFirstProductName(Map<String, dynamic> data) {
     try {
-      final product = data['product'] as List<dynamic>? ?? [];
-
+      final product = data['product'] as List? ?? [];
       if (product.isNotEmpty && product[0] != null) {
         final firstProduct = Map<String, dynamic>.from(product[0] as Map);
         return firstProduct['product']?.toString() ?? 'Unknown Product';
@@ -232,8 +274,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
   // Helper method to safely get total quantity from product array
   int _getTotalQuantity(Map<String, dynamic> data) {
     try {
-      final product = data['product'] as List<dynamic>? ?? [];
-
+      final product = data['product'] as List? ?? [];
       int totalQuantity = 0;
       for (var item in product) {
         if (item != null) {
@@ -251,8 +292,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
   // Helper method to safely get total amount from product array
   double _getTotalAmount(Map<String, dynamic> data) {
     try {
-      final product = data['product'] as List<dynamic>? ?? [];
-
+      final product = data['product'] as List? ?? [];
       double totalAmount = 0.0;
       for (var item in product) {
         if (item != null) {
@@ -272,7 +312,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
   // Helper method to safely get products count
   int _getProductsCount(Map<String, dynamic> data) {
     try {
-      final product = data['product'] as List<dynamic>? ?? [];
+      final product = data['product'] as List? ?? [];
       return product.where((item) => item != null).length;
     } catch (e) {
       print("Error getting products count: $e");
@@ -303,14 +343,11 @@ class _TransactionScreenState extends State<TransactionScreen> {
       }
 
       final dataMap = Map<String, dynamic>.from(data as Map);
-
       final type = dataMap['type']?.toString() ?? 'Unknown';
       final status = dataMap['status']?.toString() ?? 'Unknown';
       final party = dataMap['party']?.toString() ?? 'Unknown Party';
-
       final isPurchase = type == 'Purchase';
       final isPaid = status == 'Paid';
-
       final productsCount = _getProductsCount(dataMap);
       final totalQuantity = _getTotalQuantity(dataMap);
       final totalAmount = _getTotalAmount(dataMap);
@@ -371,7 +408,6 @@ class _TransactionScreenState extends State<TransactionScreen> {
                   ),
                 ],
               ),
-
               const SizedBox(height: 12),
 
               // Transaction details
@@ -388,7 +424,6 @@ class _TransactionScreenState extends State<TransactionScreen> {
                   Icons.local_offer,
                   "${isPurchase ? 'Supplier' : 'Customer'}: $party"
               ),
-
               const SizedBox(height: 12),
 
               // Status and actions row
@@ -523,6 +558,110 @@ class _TransactionScreenState extends State<TransactionScreen> {
     return text[0].toUpperCase() + text.substring(1).toLowerCase();
   }
 
+  // MIGRATION: Add product_names to existing transactions
+  Future<void> _migrateExistingTransactions() async {
+    if (user == null) return;
+
+    try {
+      final transactions = await FirebaseFirestore.instance
+          .collection('transactions')
+          .where('user', isEqualTo: user!.uid)
+          .get();
+
+      print("📊 Found ${transactions.docs.length} transactions to check");
+
+      final batch = FirebaseFirestore.instance.batch();
+      int migrationCount = 0;
+      int skippedCount = 0;
+
+      for (var doc in transactions.docs) {
+        final data = doc.data();
+
+        // Skip if already has product_names field
+        if (data['product_names'] != null) {
+          print("⏭️ Transaction ${doc.id} already has product_names: ${data['product_names']}");
+          skippedCount++;
+          continue;
+        }
+
+        final products = data['product'] as List<dynamic>? ?? [];
+        print("🔄 Processing transaction ${doc.id} with ${products.length} products");
+
+        final productNames = <String>[];
+        for (var product in products) {
+          if (product is Map<String, dynamic>) {
+            final productName = product['product']?.toString().toLowerCase().trim() ?? '';
+            if (productName.isNotEmpty) {
+              productNames.add(productName);
+              print("  ➕ Adding product name: '$productName'");
+            }
+          }
+        }
+
+        if (productNames.isNotEmpty) {
+          print("✅ Will add product_names: $productNames to transaction ${doc.id}");
+          batch.update(doc.reference, {'product_names': productNames});
+          migrationCount++;
+        } else {
+          print("⚠️ No valid product names found for transaction ${doc.id}");
+        }
+      }
+
+      if (migrationCount > 0) {
+        await batch.commit();
+        print("🎉 Migration completed for $migrationCount transactions");
+        _showToast('✅ Migration completed! Updated $migrationCount transactions', Colors.green);
+      } else if (skippedCount > 0) {
+        print("ℹ️ All $skippedCount transactions already have product names");
+        _showToast('ℹ️ All transactions already have product names', Colors.blue);
+      } else {
+        print("⚠️ No transactions found to migrate");
+        _showToast('⚠️ No transactions found to migrate', Colors.orange);
+      }
+    } catch (e) {
+      print("❌ Migration error: $e");
+      _showToast('❌ Migration failed: $e', Colors.red);
+    }
+  }
+
+  // DEBUG: Check transaction data structure
+  Future<void> _debugTransactions() async {
+    if (user == null) return;
+
+    try {
+      final transactions = await FirebaseFirestore.instance
+          .collection('transactions')
+          .where('user', isEqualTo: user!.uid)
+          .limit(3)
+          .get();
+
+      print("\n🔍 === DEBUG: Transaction Data Structure ===");
+
+      for (var doc in transactions.docs) {
+        final data = doc.data();
+        print("\n📄 Transaction ${doc.id}:");
+        print("  🏷️  Type: ${data['type']}");
+        print("  🏢  Party: ${data['party']}");
+        print("  📦  product_names: ${data['product_names']}");
+        print("  📋  products: ${data['product']}");
+
+        final products = data['product'] as List<dynamic>? ?? [];
+        print("  📝  Product details:");
+        for (int i = 0; i < products.length; i++) {
+          if (products[i] is Map<String, dynamic>) {
+            final product = products[i] as Map<String, dynamic>;
+            print("    ${i + 1}. ${product['product']} (qty: ${product['quantity']})");
+          }
+        }
+      }
+
+      print("=== END DEBUG ===\n");
+      _showToast('Check console for debug info', Colors.blue);
+    } catch (e) {
+      print("Debug error: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -540,6 +679,20 @@ class _TransactionScreenState extends State<TransactionScreen> {
           backgroundColor: Colors.indigo,
           foregroundColor: Colors.white,
           elevation: 1,
+          actions: [
+            // Migration button
+            IconButton(
+              onPressed: _migrateExistingTransactions,
+              icon: const Icon(Icons.sync),
+              tooltip: 'Migrate existing transactions',
+            ),
+            // Debug button (remove in production)
+            IconButton(
+              onPressed: _debugTransactions,
+              icon: const Icon(Icons.bug_report),
+              tooltip: 'Debug transactions',
+            ),
+          ],
         ),
         floatingActionButton: FloatingActionButton(
           backgroundColor: Colors.indigo,
@@ -560,7 +713,7 @@ class _TransactionScreenState extends State<TransactionScreen> {
                 controller: _searchController,
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.search),
-                  hintText: 'Search by party name...',
+                  hintText: 'Search by product name (e.g., "onion", "garlic")...',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(color: Colors.grey.shade300),
@@ -576,10 +729,11 @@ class _TransactionScreenState extends State<TransactionScreen> {
                 },
               ),
               const SizedBox(height: 16),
-              // Transaction list
+
+              // Transaction list with hybrid search
               Expanded(
-                child: StreamBuilder<QuerySnapshot>(
-                  stream: _getTransactionStream(),
+                child: StreamBuilder<List<DocumentSnapshot>>(
+                  stream: _getHybridTransactionStream(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());
@@ -607,7 +761,44 @@ class _TransactionScreenState extends State<TransactionScreen> {
                       );
                     }
 
-                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    final docs = snapshot.data ?? [];
+
+                    if (docs.isEmpty && _searchQuery.isNotEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.search_off, color: Colors.grey.shade400, size: 64),
+                            const SizedBox(height: 16),
+                            Text(
+                              "No transactions found for '$_searchQuery'",
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              "Try exact product names like 'onion', 'garlic'",
+                              style: TextStyle(color: Colors.grey.shade500),
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: _debugTransactions,
+                              icon: Icon(Icons.info_outline),
+                              label: Text("Debug Data"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    if (docs.isEmpty) {
                       return Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -632,11 +823,9 @@ class _TransactionScreenState extends State<TransactionScreen> {
                       );
                     }
 
-                    final docs = snapshot.data!.docs;
-
                     return ListView.builder(
                       itemCount: docs.length,
-                      padding: const EdgeInsets.only(bottom: 80), // Space for FAB
+                      padding: const EdgeInsets.only(bottom: 80),
                       itemBuilder: (context, index) {
                         final doc = docs[index];
                         if (doc.exists) {

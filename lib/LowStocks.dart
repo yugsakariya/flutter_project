@@ -189,15 +189,6 @@ class _LowStocksState extends State<LowStocks> {
                     color: Colors.grey.shade400,
                     size: 16,
                   ),
-                  onTap: () {
-                    // You can add navigation to product details here
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Product: ${_capitalizeFirstLetter(productName)}'),
-                        duration: const Duration(seconds: 1),
-                      ),
-                    );
-                  },
                 ),
               );
             },

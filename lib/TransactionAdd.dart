@@ -14,6 +14,9 @@ class Transactionadd extends StatefulWidget {
 class _TransactionaddState extends State<Transactionadd> {
   final _dateController = TextEditingController();
   final _partyController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _stateController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   final _partyFocusNode = FocusNode();
   String _selectedType = 'Purchase';
@@ -59,7 +62,8 @@ class _TransactionaddState extends State<Transactionadd> {
 
     // Initialize focus listeners for first product
     (_products[0]['productFocusNode'] as FocusNode).addListener(() {
-      setState(() => _products[0]['showProductSuggestions'] = (_products[0]['productFocusNode'] as FocusNode).hasFocus);
+      setState(() => _products[0]['showProductSuggestions'] =
+          (_products[0]['productFocusNode'] as FocusNode).hasFocus);
     });
   }
 
@@ -67,6 +71,9 @@ class _TransactionaddState extends State<Transactionadd> {
   void dispose() {
     _dateController.dispose();
     _partyController.dispose();
+    _phoneController.dispose();
+    _cityController.dispose();
+    _stateController.dispose();
     _partyFocusNode.dispose();
     // Dispose all product controllers
     for (var product in _products) {
@@ -93,8 +100,10 @@ class _TransactionaddState extends State<Transactionadd> {
           .where('user', isEqualTo: user!.uid)
           .limit(1)
           .get();
+
       if (stockQuery.docs.isNotEmpty) {
-        setState(() => _products[productIndex]['availableStock'] = stockQuery.docs.first['quantity'] ?? 0);
+        setState(() => _products[productIndex]['availableStock'] =
+            stockQuery.docs.first['quantity'] ?? 0);
       } else {
         setState(() => _products[productIndex]['availableStock'] = 0);
       }
@@ -103,9 +112,164 @@ class _TransactionaddState extends State<Transactionadd> {
     }
   }
 
+  // Load party details when selected
+  Future<void> _loadPartyDetails(String partyName) async {
+    try {
+      final partyQuery = await FirebaseFirestore.instance
+          .collection(_partyCollection)
+          .where('user', isEqualTo: user?.uid)
+          .where('name', isEqualTo: partyName)
+          .limit(1)
+          .get();
+
+      if (partyQuery.docs.isNotEmpty) {
+        final partyData = partyQuery.docs.first.data();
+        setState(() {
+          _phoneController.text = partyData['phone'] ?? '';
+          _cityController.text = partyData['city'] ?? '';
+          _stateController.text = partyData['state'] ?? '';
+        });
+      }
+    } catch (e) {
+      print('Error loading party details: e');
+    }
+  }
+
+  // Show add party dialog
+  void _showAddPartyDialog() {
+    final newNameController = TextEditingController(text: _partyController.text);
+    final newPhoneController = TextEditingController();
+    final newCityController = TextEditingController();
+    final newStateController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Add New $_partyLabel'),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: newNameController,
+                  decoration: InputDecoration(
+                    labelText: '$_partyLabel Name*',
+                    prefixIcon: Icon(_selectedType == 'Purchase' ?
+                    Icons.business : Icons.person),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) =>
+                  value?.isEmpty ?? true ? 'Please enter name' : null,
+                ),
+                SizedBox(height: 16),
+                TextFormField(
+                  controller: newPhoneController,
+                  decoration: InputDecoration(
+                    labelText: 'Phone Number',
+                    prefixIcon: Icon(Icons.phone),
+                    border: OutlineInputBorder(),
+                    prefixText: '+91 ',
+                  ),
+                  keyboardType: TextInputType.phone,
+                  maxLength: 10,
+                  validator: (value) {
+                    if (value?.trim().isNotEmpty == true &&
+                        value!.trim().length != 10) {
+                      return 'Please enter a valid 10-digit phone number';
+                    }
+                    return null;
+                  },
+                ),
+                SizedBox(height: 16),
+                TextFormField(
+                  controller: newCityController,
+                  decoration: InputDecoration(
+                    labelText: 'City',
+                    prefixIcon: Icon(Icons.location_city),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                SizedBox(height: 16),
+                TextFormField(
+                  controller: newStateController,
+                  decoration: InputDecoration(
+                    labelText: 'State',
+                    prefixIcon: Icon(Icons.map),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => _addNewParty(
+              newNameController.text,
+              newPhoneController.text,
+              newCityController.text,
+              newStateController.text,
+              formKey,
+            ),
+            child: Text('Add'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.indigo,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Add new party
+  Future<void> _addNewParty(String name, String phone, String city, String state,
+      GlobalKey<FormState> formKey) async {
+    if (!formKey.currentState!.validate()) return;
+
+    try {
+      await FirebaseFirestore.instance.collection(_partyCollection).add({
+        'name': name.trim(),
+        'phone': phone.trim(),
+        'city': city.trim(),
+        'state': state.trim(),
+        'user': user?.uid,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      Navigator.pop(context);
+      // Auto-fill the form with new party data
+      setState(() {
+        _partyController.text = name.trim();
+        _phoneController.text = phone.trim();
+        _cityController.text = city.trim();
+        _stateController.text = state.trim();
+      });
+
+      Fluttertoast.showToast(
+        msg: '$_partyLabel added successfully!',
+        backgroundColor: Colors.green,
+      );
+    } catch (e) {
+      Fluttertoast.showToast(
+        msg: 'Error adding $_partyLabel: e',
+        backgroundColor: Colors.red,
+      );
+    }
+  }
+
   // Get available stock products for sales
   Stream<List<Map<String, dynamic>>> _getAvailableStockProducts() {
     if (user == null || _selectedType != 'Sale') return Stream.value([]);
+
     return FirebaseFirestore.instance
         .collection('stocks')
         .where('user', isEqualTo: user!.uid)
@@ -126,6 +290,7 @@ class _TransactionaddState extends State<Transactionadd> {
   Stream<List<String>> _getProductSuggestions(String query) {
     if (query.trim().isEmpty) return Stream.value([]);
     final lowercaseQuery = query.trim().toLowerCase();
+
     if (_selectedType == 'Sale') {
       // For sales, only show products with available stock
       return FirebaseFirestore.instance
@@ -165,6 +330,7 @@ class _TransactionaddState extends State<Transactionadd> {
   Stream<List<String>> _getPartySuggestions(String query) {
     if (query.trim().isEmpty) return Stream.value([]);
     final lowercaseQuery = query.trim().toLowerCase();
+
     return FirebaseFirestore.instance
         .collection(_partyCollection)
         .where('user', isEqualTo: user?.uid)
@@ -183,6 +349,7 @@ class _TransactionaddState extends State<Transactionadd> {
 
   Future<void> _updateStock(String productName, int quantity, String type) async {
     if (user == null) return;
+
     final stockQuery = await FirebaseFirestore.instance
         .collection('stocks')
         .where('product', isEqualTo: productName)
@@ -200,7 +367,7 @@ class _TransactionaddState extends State<Transactionadd> {
       // PREVENT NEGATIVE STOCK
       if (newQuantity < 0) {
         Fluttertoast.showToast(
-            msg: "Insufficient stock! Available: $currentQty",
+            msg: "Insufficient stock! Available: currentQty",
             backgroundColor: Colors.red);
         throw Exception("Stock cannot be negative");
       }
@@ -233,58 +400,83 @@ class _TransactionaddState extends State<Transactionadd> {
 
   Future<void> _ensurePartyExists(String partyName) async {
     if (user == null || partyName.trim().isEmpty) return;
+
     final partyQuery = await FirebaseFirestore.instance
         .collection(_partyCollection)
         .where('name', isEqualTo: partyName.trim())
         .where('user', isEqualTo: user!.uid)
         .limit(1)
         .get();
+
     if (partyQuery.docs.isEmpty) {
       await FirebaseFirestore.instance.collection(_partyCollection).add({
         'name': partyName.trim(),
+        'phone': _phoneController.text.trim(),
+        'city': _cityController.text.trim(),
+        'state': _stateController.text.trim(),
         'user': user!.uid,
         'createdAt': DateTime.now(),
         'lastUpdated': DateTime.now(),
       });
     } else {
+      // Update existing party with new details
       await partyQuery.docs.first.reference.update({
+        'phone': _phoneController.text.trim(),
+        'city': _cityController.text.trim(),
+        'state': _stateController.text.trim(),
         'lastUpdated': DateTime.now(),
       });
     }
   }
 
   // Generate bill number
+  // Generate bill number with atomic counter increment
   Future<String> _generateBillNumber() async {
     try {
-      final querySnapshot = await FirebaseFirestore.instance
+      // Use a fixed document ID for the counter to avoid multiple counter documents
+      final counterRef = FirebaseFirestore.instance
           .collection('billcounter')
-          .where('user', isEqualTo: user?.uid)
-          .get();
-      if (querySnapshot.docs.isEmpty) {
-        await FirebaseFirestore.instance.collection('billcounter').add({
-          'user': user?.uid,
-          'counter': 1,
-        });
-        return "INV-1";
-      } else {
-        final doc = querySnapshot.docs.first;
-        final data = doc.data();
-        final currentCounter = data['counter'] ?? 0;
+          .doc(user!.uid); // Use user ID as document ID
+
+      // Use Firestore transaction for atomic counter increment
+      final newCounter = await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final snapshot = await transaction.get(counterRef);
+
+        int currentCounter;
+        if (snapshot.exists) {
+          currentCounter = snapshot.data()?['counter'] ?? 0;
+        } else {
+          currentCounter = 0;
+        }
+
         final newCounter = currentCounter + 1;
-        await doc.reference.update({'counter': newCounter});
-        return "INV-$newCounter";
-      }
+
+        // Update or create the counter document atomically
+        transaction.set(counterRef, {
+          'counter': newCounter,
+          'user': user!.uid,
+          'lastUpdated': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        return newCounter;
+      });
+
+      return "INV-$newCounter";
     } catch (e) {
+      print('Error generating bill number: $e');
+      // Fallback to timestamp-based bill number
       return "INV-${DateTime.now().millisecondsSinceEpoch}";
     }
   }
 
-  // FIXED: Auto-generate bill for Sale transactions with proper linking
+
+  // Auto-generate bill for Sale transactions with proper linking
+  // Auto-generate bill for Sale transactions with proper linking
   Future<String?> _generateLinkedBill(String customerName, String transactionId) async {
     if (_selectedType != 'Sale') return null;
 
     try {
-      final billNumber = await _generateBillNumber();
+      final billNumber = await _generateBillNumber(); // This will now work correctly
       double subtotal = 0.0;
       List<Map<String, dynamic>> billItems = [];
 
@@ -292,7 +484,8 @@ class _TransactionaddState extends State<Transactionadd> {
       for (var product in _products) {
         String productName;
         if (product['selectedProduct'] == 'Others') {
-          productName = (product['customProductController'] as TextEditingController).text.toLowerCase().trim();
+          productName = (product['customProductController'] as TextEditingController)
+              .text.toLowerCase().trim();
         } else {
           productName = (product['selectedProduct'] as String).toLowerCase().trim();
         }
@@ -305,26 +498,27 @@ class _TransactionaddState extends State<Transactionadd> {
           'quantity': quantity.toString(),
           'price': unitPrice.toString(),
         });
-
         subtotal += quantity * unitPrice;
       }
 
       final tax = subtotal * 0.05; // 5% GST
       final total = subtotal + tax;
 
-      // FIXED: Create linked bill
+      // Create linked bill
       await FirebaseFirestore.instance.collection('bills').add({
         'user': user!.uid,
         'billNumber': billNumber,
         'customerName': customerName,
-        'customerPhone': '',
+        'customerPhone': _phoneController.text,
+        'customerCity': _cityController.text,
+        'customerState': _stateController.text,
         'date': DateFormat('dd-MM-yyyy').parse(_dateController.text),
         'items': billItems,
         'subtotal': subtotal,
         'tax': tax,
         'total': total,
-        'linkedTransactionId': transactionId, // NEW: Link to transaction
-        'billType': 'auto-generated', // NEW: Mark as auto-generated
+        'linkedTransactionId': transactionId, // Link to transaction
+        'billType': 'auto-generated', // Mark as auto-generated
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -336,6 +530,7 @@ class _TransactionaddState extends State<Transactionadd> {
       return null;
     }
   }
+
 
   // Add new product to the list
   void _addNewProduct() {
@@ -354,7 +549,8 @@ class _TransactionaddState extends State<Transactionadd> {
 
       // Add focus listener for new product
       (newProduct['productFocusNode'] as FocusNode).addListener(() {
-        setState(() => newProduct['showProductSuggestions'] = (newProduct['productFocusNode'] as FocusNode).hasFocus);
+        setState(() => newProduct['showProductSuggestions'] =
+            (newProduct['productFocusNode'] as FocusNode).hasFocus);
       });
 
       _products.add(newProduct);
@@ -382,8 +578,10 @@ class _TransactionaddState extends State<Transactionadd> {
     setState(() {
       _products[index]['selectedProduct'] = value ?? '';
       _products[index]['showCustomProductField'] = value == 'Others';
+
       if (value != 'Others') {
-        (_products[index]['productController'] as TextEditingController).text = value?.toLowerCase() ?? '';
+        (_products[index]['productController'] as TextEditingController).text =
+            value?.toLowerCase() ?? '';
         (_products[index]['customProductController'] as TextEditingController).clear();
       } else {
         (_products[index]['productController'] as TextEditingController).clear();
@@ -403,6 +601,7 @@ class _TransactionaddState extends State<Transactionadd> {
     if (!_formKey.currentState!.validate() || user == null) return;
 
     setState(() => _isLoading = true);
+
     try {
       final partyName = _partyController.text.trim();
 
@@ -411,7 +610,8 @@ class _TransactionaddState extends State<Transactionadd> {
         final product = _products[i];
         String productName;
         if (product['selectedProduct'] == 'Others') {
-          productName = (product['customProductController'] as TextEditingController).text.toLowerCase().trim();
+          productName = (product['customProductController'] as TextEditingController)
+              .text.toLowerCase().trim();
         } else {
           productName = (product['selectedProduct'] as String).toLowerCase().trim();
         }
@@ -445,7 +645,6 @@ class _TransactionaddState extends State<Transactionadd> {
           if (stockQuery.docs.isNotEmpty) {
             availableStock = stockQuery.docs.first['quantity'] ?? 0;
           }
-
           if (quantity > availableStock) {
             throw Exception("Product ${i + 1}: Insufficient stock. Available: $availableStock");
           }
@@ -457,12 +656,14 @@ class _TransactionaddState extends State<Transactionadd> {
 
       // Prepare products array for single transaction document
       List<Map<String, dynamic>> productsArray = [];
+      List<String> productNames = []; // NEW: Build product names array
       double totalAmount = 0.0;
 
       for (var product in _products) {
         String productName;
         if (product['selectedProduct'] == 'Others') {
-          productName = (product['customProductController'] as TextEditingController).text.toLowerCase().trim();
+          productName = (product['customProductController'] as TextEditingController)
+              .text.toLowerCase().trim();
         } else {
           productName = (product['selectedProduct'] as String).toLowerCase().trim();
         }
@@ -476,15 +677,19 @@ class _TransactionaddState extends State<Transactionadd> {
           'unitPrice': unitPrice,
         });
 
+        // NEW: Add to product names array
+        productNames.add(productName);
+
         totalAmount += quantity * unitPrice;
 
-        // Update stock for each product (moved to happen before transaction creation)
+        // Update stock for each product
         await _updateStock(productName, quantity, _selectedType);
       }
 
-      // FIXED: Create transaction with proper bill linking
+      // Create transaction with proper bill linking
       final transactionRef = await FirebaseFirestore.instance.collection('transactions').add({
         'product': productsArray,
+        'product_names': productNames, // NEW: Add product names array
         'party': partyName,
         'date': DateFormat('dd-MM-yyyy').parse(_dateController.text),
         'type': _selectedType,
@@ -496,7 +701,7 @@ class _TransactionaddState extends State<Transactionadd> {
         'lastUpdated': DateTime.now(),
       });
 
-      // FIXED: Auto-generate bill for Sale transactions with proper linking
+      // Auto-generate bill for Sale transactions with proper linking
       String? linkedBillNumber;
       if (_selectedType == 'Sale') {
         linkedBillNumber = await _generateLinkedBill(partyName, transactionRef.id);
@@ -528,6 +733,7 @@ class _TransactionaddState extends State<Transactionadd> {
       setState(() => _isLoading = false);
     }
   }
+
 
   Widget _buildSuggestionsList({
     required Stream<List<String>> stream,
@@ -588,6 +794,7 @@ class _TransactionaddState extends State<Transactionadd> {
                 onTap: () {
                   controller.text = suggestions[index];
                   focusNode.unfocus();
+                  _loadPartyDetails(suggestions[index]); // Auto-load details
                   setState(() {});
                 },
                 borderRadius: BorderRadius.circular(8),
@@ -601,264 +808,6 @@ class _TransactionaddState extends State<Transactionadd> {
               ),
             ),
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildProductCard(int index) {
-    final product = _products[index];
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Product header with remove button
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.blue.shade200),
-                  ),
-                  child: Text(
-                    "Product ${index + 1}",
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.blue.shade700,
-                    ),
-                  ),
-                ),
-                if (_products.length > 1)
-                  IconButton(
-                    onPressed: () => _removeProduct(index),
-                    icon: const Icon(Icons.remove_circle_outline),
-                    color: Colors.red.shade600,
-                    tooltip: "Remove Product",
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Product dropdown - full width
-            _buildStockAwareDropdown(index),
-
-            // Custom product field (shown only when "Others" is selected)
-            if (_products[index]['showCustomProductField'] as bool) ...[
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _products[index]['customProductController'] as TextEditingController,
-                focusNode: _products[index]['productFocusNode'] as FocusNode,
-                enabled: !_isLoading,
-                decoration: const InputDecoration(
-                  labelText: "Custom Product Name",
-                  hintText: "Enter custom product name",
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.edit),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                ),
-                validator: (value) {
-                  if (_products[index]['selectedProduct'] == 'Others' && (value?.trim().isEmpty == true)) {
-                    return "Please enter custom product name";
-                  }
-                  return null;
-                },
-                onChanged: (value) async {
-                  final normalizedProductName = value.toLowerCase().trim();
-                  (_products[index]['productController'] as TextEditingController).text = normalizedProductName;
-                  setState(() {});
-                  if (_selectedType == 'Sale' && value.trim().isNotEmpty) {
-                    await _getAvailableStock(index, normalizedProductName);
-                  }
-                },
-              ),
-              if ((_products[index]['showProductSuggestions'] as bool) &&
-                  (_products[index]['customProductController'] as TextEditingController).text.trim().isNotEmpty &&
-                  !_isLoading)
-                _buildSuggestionsList(
-                  stream: _getProductSuggestions(
-                      (_products[index]['customProductController'] as TextEditingController).text),
-                  controller: _products[index]['customProductController'] as TextEditingController,
-                  focusNode: _products[index]['productFocusNode'] as FocusNode,
-                ),
-            ],
-            const SizedBox(height: 16),
-
-            // Quantity field - full width
-            TextFormField(
-              controller: _products[index]['quantityController'] as TextEditingController,
-              enabled: !_isLoading,
-              decoration: InputDecoration(
-                labelText: "Quantity",
-                hintText: "Enter quantity",
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.inventory_2_outlined),
-                helperText: _selectedType == 'Sale' &&
-                    (((_products[index]['selectedProduct'] as String).isNotEmpty &&
-                        _products[index]['selectedProduct'] != 'Others') ||
-                        (_products[index]['customProductController'] as TextEditingController)
-                            .text
-                            .isNotEmpty)
-                    ? "Available stock: ${_products[index]['availableStock']}"
-                    : null,
-                helperStyle: TextStyle(
-                  color: (_products[index]['availableStock'] as int) > 0
-                      ? Colors.green.shade600
-                      : Colors.red.shade600,
-                  fontWeight: FontWeight.w500,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-              ),
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (value?.trim().isEmpty == true) return "Please enter quantity";
-                final qty = int.tryParse(value!);
-                if (qty == null || qty <= 0) return "Quantity must be greater than 0";
-                if (_selectedType == 'Sale' && qty > (_products[index]['availableStock'] as int)) {
-                  return "Insufficient stock. Available: ${_products[index]['availableStock']}";
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Unit Price field - full width
-            TextFormField(
-              controller: _products[index]['unitPriceController'] as TextEditingController,
-              enabled: !_isLoading,
-              decoration: const InputDecoration(
-                labelText: "Unit Price",
-                hintText: "Enter unit price",
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.currency_rupee),
-                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-              ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              validator: (value) {
-                if (value?.trim().isEmpty == true) return "Please enter unit price";
-                final price = double.tryParse(value!);
-                return price == null || price <= 0 ? "Unit price must be greater than 0" : null;
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Build dropdown with available stock products - FIXED DUPLICATE VALUES ISSUE
-  Widget _buildStockAwareDropdown(int index) {
-    if (_selectedType != 'Sale') {
-      return DropdownButtonFormField<String>(
-        value: (_products[index]['selectedProduct'] as String).isEmpty
-            ? null
-            : _products[index]['selectedProduct'] as String,
-        items: _predefinedProducts.map((product) {
-          return DropdownMenuItem<String>(
-            value: product,
-            child: Text(product),
-          );
-        }).toList(),
-        onChanged: _isLoading ? null : (value) => _onProductChanged(index, value),
-        decoration: const InputDecoration(
-          labelText: "Product",
-          hintText: "Select a product",
-          border: OutlineInputBorder(),
-          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-        ),
-        validator: (value) => value == null ? "Please select a product" : null,
-        isExpanded: true,
-      );
-    }
-
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _getAvailableStockProducts(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return DropdownButtonFormField<String>(
-            items: const [],
-            onChanged: null,
-            decoration: const InputDecoration(
-              labelText: "Loading products...",
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            ),
-          );
-        }
-
-        final stockProducts = snapshot.data ?? [];
-
-        // FIXED: Remove duplicates by using a Map with product name as key
-        final Map<String, Map<String, dynamic>> uniqueProductsMap = {};
-        for (final product in stockProducts) {
-          final productName = product['product'].toString();
-          // Keep the one with highest quantity if duplicates exist
-          if (!uniqueProductsMap.containsKey(productName) ||
-              (uniqueProductsMap[productName]!['quantity'] as int) < (product['quantity'] as int)) {
-            uniqueProductsMap[productName] = product;
-          }
-        }
-
-        final List<DropdownMenuItem<String>> products = [];
-
-        // Add stock products with better formatting
-        uniqueProductsMap.values.forEach((product) {
-          products.add(
-            DropdownMenuItem<String>(
-              value: product['product'].toString(),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        product['product'].toString(),
-                        style: const TextStyle(fontSize: 14),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                ),
-              ),
-            ),
-          );
-        });
-
-        if (!uniqueProductsMap.containsKey('Others')) {
-          products.add(const DropdownMenuItem<String>(
-            value: 'Others',
-            child: Text('Others'),
-          ));
-        }
-
-        final currentValue = (_products[index]['selectedProduct'] as String);
-        final validValues = products.map((product) => product.value).toList();
-        final isValidSelection = currentValue.isEmpty || validValues.contains(currentValue);
-
-        return DropdownButtonFormField<String>(
-          value: isValidSelection ? (currentValue.isEmpty ? null : currentValue) : null,
-          items: products,
-          onChanged: _isLoading ? null : (value) => _onProductChanged(index, value),
-          decoration: const InputDecoration(
-            labelText: "Product",
-            hintText: "Select a product",
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-          ),
-          validator: (value) => value == null ? "Please select a product" : null,
-          isExpanded: true,
-          menuMaxHeight: 250,
         );
       },
     );
@@ -885,12 +834,15 @@ class _TransactionaddState extends State<Transactionadd> {
                   DropdownButtonFormField<String>(
                     value: _selectedType,
                     items: ['Purchase', 'Sale']
-                        .map((type) => DropdownMenuItem<String>(value: type, child: Text(type)))
+                        .map((type) => DropdownMenuItem(value: type, child: Text(type)))
                         .toList(),
                     onChanged: _isLoading ? null : (value) {
                       setState(() {
                         _selectedType = value!;
                         _partyController.clear();
+                        _phoneController.clear();
+                        _cityController.clear();
+                        _stateController.clear();
                         _partyFocusNode.unfocus();
                         // Reset all products' available stock when type changes
                         for (var product in _products) {
@@ -899,89 +851,37 @@ class _TransactionaddState extends State<Transactionadd> {
                       });
                     },
                     decoration: const InputDecoration(
-                      labelText: "Type",
+                      labelText: "Transaction Type",
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                     ),
-                    validator: (value) => value == null ? "Please select type" : null,
-                    isExpanded: true,
                   ),
                   const SizedBox(height: 16),
-
-                  // Products section with add button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        "Products",
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      IconButton(
-                        onPressed: _isLoading ? null : _addNewProduct,
-                        icon: const Icon(Icons.add_circle, color: Colors.green),
-                        tooltip: "Add Product",
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Dynamic list of products
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _products.length,
-                    itemBuilder: (context, index) => _buildProductCard(index),
-                  ),
-                  const SizedBox(height: 16),
-
-                  TextFormField(
-                    controller: _dateController,
-                    enabled: !_isLoading,
-                    decoration: const InputDecoration(
-                      labelText: "Date",
-                      suffixIcon: Icon(Icons.calendar_today),
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                    ),
-                    readOnly: true,
-                    onTap: _isLoading ? null : () async {
-                      final pickedDate = await showDatePicker(
-                        context: context,
-                        initialDate: DateTime.now(),
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (pickedDate != null) {
-                        _dateController.text = DateFormat('dd-MM-yyyy').format(pickedDate);
-                      }
-                    },
-                    validator: (value) =>
-                    value?.trim().isEmpty == true ? "Please select date" : null,
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Party field with suggestions
+                  // Party name field with suggestions
                   Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextFormField(
-                        controller: _partyController,
-                        focusNode: _partyFocusNode,
-                        enabled: !_isLoading,
-                        decoration: InputDecoration(
-                          labelText: _partyLabel,
-                          hintText: "Enter $_partyLabel name",
-                          border: const OutlineInputBorder(),
-                          prefixIcon: const Icon(Icons.person),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                        ),
-                        validator: (value) =>
-                        value?.trim().isEmpty == true ? "Please enter $_partyLabel name" : null,
-                        onChanged: (value) => setState(() {}),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _partyController,
+                              focusNode: _partyFocusNode,
+                              decoration: InputDecoration(
+                                labelText: _partyLabel,
+                                border: OutlineInputBorder(),
+                                suffixIcon: IconButton(
+                                  icon: Icon(Icons.add, color: Colors.indigo),
+                                  onPressed: _showAddPartyDialog,
+                                  tooltip: 'Add New _partyLabel',
+                                ),
+                              ),
+                              validator: (value) =>
+                              value?.isEmpty ?? true ? "Please enter _partyLabel name" : null,
+                              onChanged: (value) => setState(() {}),
+                            ),
+                          ),
+                        ],
                       ),
-                      if (_showPartySuggestions &&
-                          _partyController.text.trim().isNotEmpty &&
-                          !_isLoading)
+                      if (_showPartySuggestions && _partyController.text.isNotEmpty)
                         _buildSuggestionsList(
                           stream: _getPartySuggestions(_partyController.text),
                           controller: _partyController,
@@ -990,21 +890,100 @@ class _TransactionaddState extends State<Transactionadd> {
                     ],
                   ),
                   const SizedBox(height: 16),
-
+                  // Phone field
+                  TextFormField(
+                    controller: _phoneController,
+                    decoration: const InputDecoration(
+                      labelText: "Phone Number",
+                      border: OutlineInputBorder(),
+                      prefixText: '+91 ',
+                    ),
+                    keyboardType: TextInputType.phone,
+                    maxLength: 10,
+                    validator: (value) {
+                      if (value?.trim().isNotEmpty == true && value!.trim().length != 10) {
+                        return 'Please enter a valid 10-digit phone number';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  // City field
+                  TextFormField(
+                    controller: _cityController,
+                    decoration: const InputDecoration(
+                      labelText: "City",
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // State field
+                  TextFormField(
+                    controller: _stateController,
+                    decoration: const InputDecoration(
+                      labelText: "State",
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Date field
+                  TextFormField(
+                    controller: _dateController,
+                    decoration: const InputDecoration(
+                      labelText: "Date",
+                      border: OutlineInputBorder(),
+                      suffixIcon: Icon(Icons.calendar_today),
+                    ),
+                    readOnly: true,
+                    onTap: () async {
+                      DateTime? picked = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) {
+                        _dateController.text = DateFormat('dd-MM-yyyy').format(picked);
+                      }
+                    },
+                    validator: (value) => value?.isEmpty ?? true ? "Please select date" : null,
+                  ),
+                  const SizedBox(height: 20),
+                  // Products section header
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Products",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.indigo,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _addNewProduct,
+                        icon: Icon(Icons.add_circle_outline, color: Colors.indigo),
+                        tooltip: "Add Product",
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // Products list
+                  ...List.generate(_products.length, (index) =>
+                      _buildProductCard(index)),
+                  const SizedBox(height: 16),
                   // Status dropdown
                   DropdownButtonFormField<String>(
                     value: _selectedStatus,
-                    items: ['Paid', 'Due']
-                        .map((status) => DropdownMenuItem<String>(value: status, child: Text(status)))
+                    items: ['Paid', 'Unpaid']
+                        .map((status) => DropdownMenuItem(value: status, child: Text(status)))
                         .toList(),
                     onChanged: _isLoading ? null : (value) => setState(() => _selectedStatus = value!),
                     decoration: const InputDecoration(
                       labelText: "Status",
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                     ),
-                    validator: (value) => value == null ? "Please select status" : null,
-                    isExpanded: true,
                   ),
                 ],
               ),
@@ -1013,41 +992,162 @@ class _TransactionaddState extends State<Transactionadd> {
         ),
       ),
       actions: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            TextButton(
-              onPressed: _isLoading ? null : () => Navigator.pop(context),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
-              child: const Text("Cancel"),
-            ),
-            const SizedBox(width: 12),
-            ElevatedButton(
-              onPressed: _isLoading ? null : _submitTransaction,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue.shade600,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: _isLoading
-                  ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-                  : const Text("Submit"),
-            ),
-          ],
+        TextButton(
+          onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+          child: const Text("Cancel"),
+        ),
+        ElevatedButton(
+          onPressed: _isLoading ? null : _submitTransaction,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.indigo,
+            foregroundColor: Colors.white,
+          ),
+          child: _isLoading
+              ? const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+          )
+              : const Text("Submit"),
         ),
       ],
+    );
+  }
+
+  Widget _buildProductCard(int index) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Product header with remove button
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "Product ${index + 1}",
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (_products.length > 1)
+                  IconButton(
+                    onPressed: () => _removeProduct(index),
+                    icon: const Icon(Icons.remove_circle_outline),
+                    color: Colors.red,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Product dropdown
+            DropdownButtonFormField<String>(
+              value: (_products[index]['selectedProduct'] as String).isEmpty
+                  ? null
+                  : _products[index]['selectedProduct'] as String,
+              items: _predefinedProducts.map((product) {
+                return DropdownMenuItem(
+                  value: product,
+                  child: Text(product),
+                );
+              }).toList(),
+              onChanged: _isLoading ? null : (value) => _onProductChanged(index, value),
+              decoration: const InputDecoration(
+                labelText: "Product",
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) => value == null ? "Please select a product" : null,
+            ),
+
+            // Custom product field (shown only when "Others" is selected)
+            if (_products[index]['showCustomProductField'] as bool) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _products[index]['customProductController'] as TextEditingController,
+                decoration: const InputDecoration(
+                  labelText: "Product Name",
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (_products[index]['selectedProduct'] == 'Others' && (value?.trim().isEmpty ?? true)) {
+                    return "Please enter product name";
+                  }
+                  return null;
+                },
+              ),
+            ],
+            const SizedBox(height: 12),
+
+            // Quantity field (full width)
+            TextFormField(
+              controller: _products[index]['quantityController'] as TextEditingController,
+              decoration: const InputDecoration(
+                labelText: "Quantity",
+                border: OutlineInputBorder(),
+                suffixText: "kg",
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value?.isEmpty ?? true) return "Enter quantity";
+                final qty = int.tryParse(value!) ?? 0;
+                if (qty <= 0) return "Quantity must be > 0";
+                // Check stock for sales
+                if (_selectedType == 'Sale') {
+                  final availableStock = _products[index]['availableStock'] as int;
+                  if (qty > availableStock) {
+                    return "Max: $availableStock";
+                  }
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+
+            // Unit price field (full width)
+            TextFormField(
+              controller: _products[index]['unitPriceController'] as TextEditingController,
+              decoration: const InputDecoration(
+                labelText: "Unit Price",
+                border: OutlineInputBorder(),
+                prefixText: "₹ ",
+                suffixText: "per kg",
+              ),
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              validator: (value) {
+                if (value?.isEmpty ?? true) return "Enter price";
+                final price = double.tryParse(value!) ?? 0;
+                if (price <= 0) return "Price must be > 0";
+                return null;
+              },
+            ),
+
+            // Available stock indicator for sales
+            if (_selectedType == 'Sale' && _products[index]['selectedProduct'] != 'Others') ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Text(
+                  "Available Stock: ${_products[index]['availableStock']}",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.blue.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

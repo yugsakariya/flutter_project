@@ -15,8 +15,12 @@ class TransactionUpdate extends StatefulWidget {
 class _TransactionUpdateState extends State<TransactionUpdate> {
   final _dateController = TextEditingController();
   final _partyController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _stateController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   final _partyFocusNode = FocusNode();
+
   String _type = '';
   String _status = '';
   bool _isLoading = false;
@@ -29,7 +33,7 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
   String _originalParty = '';
   String _originalType = '';
   List<Map<String, dynamic>> _originalProducts = [];
-  String? _linkedBillNumber; // NEW: Track linked bill
+  String? _linkedBillNumber; // Track linked bill
 
   final User? user = FirebaseAuth.instance.currentUser;
 
@@ -59,6 +63,9 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
   void dispose() {
     _dateController.dispose();
     _partyController.dispose();
+    _phoneController.dispose();
+    _cityController.dispose();
+    _stateController.dispose();
     _partyFocusNode.dispose();
     // Dispose all product controllers
     for (var product in _products) {
@@ -71,8 +78,27 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
     super.dispose();
   }
 
+  // Check if party exists in the database
+  Future<bool> _checkPartyExists(String partyName) async {
+    if (user == null || partyName.trim().isEmpty) return false;
+
+    try {
+      final partyQuery = await FirebaseFirestore.instance
+          .collection(_partyCollection)
+          .where('name', isEqualTo: partyName.trim())
+          .where('user', isEqualTo: user!.uid)
+          .limit(1)
+          .get();
+
+      return partyQuery.docs.isNotEmpty;
+    } catch (e) {
+      print('Error checking party existence: $e');
+      return false;
+    }
+  }
+
   // Get available stock for specific product
-  Future<void> _getAvailableStock(int productIndex, String productName) async {
+  Future _getAvailableStock(int productIndex, String productName) async {
     if (user == null || productName.isEmpty || productIndex >= _products.length) {
       if (productIndex < _products.length) {
         setState(() => _products[productIndex]['availableStock'] = 0);
@@ -87,16 +113,13 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
           .where('user', isEqualTo: user!.uid)
           .limit(1)
           .get();
-
       if (stockQuery.docs.isNotEmpty) {
         int currentStock = stockQuery.docs.first['quantity'] ?? 0;
-
         // Add back original quantity if it was a sale of the same product
         final originalProduct = _originalProducts.firstWhere(
               (original) => original['product'] == productName.toLowerCase().trim(),
           orElse: () => {},
         );
-
         if (_originalType == 'Sale' && originalProduct.isNotEmpty) {
           currentStock += (originalProduct['quantity'] as num? ?? 0).toInt();
         }
@@ -110,14 +133,13 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
     }
   }
 
-  Future<void> _loadTransactionData() async {
+  Future _loadTransactionData() async {
     setState(() => _isLoading = true);
     try {
       final doc = await FirebaseFirestore.instance
           .collection('transactions')
           .doc(widget.docRef)
           .get();
-
       if (doc.exists) {
         final data = doc.data()!;
         final party = data["party"] ?? '';
@@ -131,12 +153,14 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
         _status = data['status'] ?? '';
         _originalParty = party;
         _originalType = type;
-        _linkedBillNumber = data['linkedBillNumber']; // NEW: Load linked bill
+        _linkedBillNumber = data['linkedBillNumber']; // Load linked bill
+
+        // Load party details
+        await _loadPartyDetails(party);
 
         // Load products from the product array in the transaction document
         _products.clear();
         _originalProducts.clear();
-
         final productsArray = data['product'] as List? ?? [];
 
         for (var productData in productsArray) {
@@ -195,6 +219,157 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
   String _capitalizeFirstLetter(String text) {
     if (text.isEmpty) return text;
     return text[0].toUpperCase() + text.substring(1).toLowerCase();
+  }
+
+  // Load party details when selected
+  Future _loadPartyDetails(String partyName) async {
+    try {
+      final partyQuery = await FirebaseFirestore.instance
+          .collection(_partyCollection)
+          .where('user', isEqualTo: user?.uid)
+          .where('name', isEqualTo: partyName)
+          .limit(1)
+          .get();
+      if (partyQuery.docs.isNotEmpty) {
+        final partyData = partyQuery.docs.first.data();
+        setState(() {
+          _phoneController.text = partyData['phone'] ?? '';
+          _cityController.text = partyData['city'] ?? '';
+          _stateController.text = partyData['state'] ?? '';
+        });
+      }
+    } catch (e) {
+      print('Error loading party details: $e');
+    }
+  }
+
+  // Show add party dialog
+  void _showAddPartyDialog() {
+    final newNameController = TextEditingController(text: _partyController.text);
+    final newPhoneController = TextEditingController();
+    final newCityController = TextEditingController();
+    final newStateController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Add New $_partyLabel'),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: newNameController,
+                  decoration: InputDecoration(
+                    labelText: '$_partyLabel Name*',
+                    prefixIcon: Icon(_type == 'Purchase' ? Icons.business : Icons.person),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) =>
+                  value?.isEmpty ?? true ? 'Please enter name' : null,
+                ),
+                SizedBox(height: 16),
+                TextFormField(
+                  controller: newPhoneController,
+                  decoration: InputDecoration(
+                    labelText: 'Phone Number',
+                    prefixIcon: Icon(Icons.phone),
+                    border: OutlineInputBorder(),
+                    prefixText: '+91 ',
+                  ),
+                  keyboardType: TextInputType.phone,
+                  maxLength: 10,
+                  validator: (value) {
+                    if (value?.trim().isNotEmpty == true && value!.trim().length != 10) {
+                      return 'Please enter a valid 10-digit phone number';
+                    }
+                    return null;
+                  },
+                ),
+                SizedBox(height: 16),
+                TextFormField(
+                  controller: newCityController,
+                  decoration: InputDecoration(
+                    labelText: 'City',
+                    prefixIcon: Icon(Icons.location_city),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                SizedBox(height: 16),
+                TextFormField(
+                  controller: newStateController,
+                  decoration: InputDecoration(
+                    labelText: 'State',
+                    prefixIcon: Icon(Icons.map),
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => _addNewParty(
+              newNameController.text,
+              newPhoneController.text,
+              newCityController.text,
+              newStateController.text,
+              formKey,
+            ),
+            child: Text('Add'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.indigo,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Add new party
+  Future _addNewParty(String name, String phone, String city, String state,
+      GlobalKey<FormState> formKey) async {
+    if (!formKey.currentState!.validate()) return;
+    try {
+      await FirebaseFirestore.instance.collection(_partyCollection).add({
+        'name': name.trim(),
+        'phone': phone.trim(),
+        'city': city.trim(),
+        'state': state.trim(),
+        'user': user?.uid,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      Navigator.pop(context);
+
+      // Auto-fill the form with new party data
+      setState(() {
+        _partyController.text = name.trim();
+        _phoneController.text = phone.trim();
+        _cityController.text = city.trim();
+        _stateController.text = state.trim();
+      });
+
+      Fluttertoast.showToast(
+        msg: '$_partyLabel added successfully!',
+        backgroundColor: Colors.green,
+      );
+    } catch (e) {
+      Fluttertoast.showToast(
+        msg: 'Error adding $_partyLabel: $e',
+        backgroundColor: Colors.red,
+      );
+    }
   }
 
   // Get available stock products for sales
@@ -310,7 +485,6 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
         (_products[index]['quantityController'] as TextEditingController?)?.dispose();
         (_products[index]['unitPriceController'] as TextEditingController?)?.dispose();
         (_products[index]['productFocusNode'] as FocusNode?)?.dispose();
-
         _products.removeAt(index);
       });
     }
@@ -338,14 +512,13 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
     }
   }
 
-  Future<void> _revertStockChange(String productName, int quantity, String type) async {
+  Future _revertStockChange(String productName, int quantity, String type) async {
     final stockQuery = await FirebaseFirestore.instance
         .collection('stocks')
         .where('user', isEqualTo: user!.uid)
         .where('product', isEqualTo: productName)
         .limit(1)
         .get();
-
     if (stockQuery.docs.isNotEmpty) {
       final revertQty = type == 'Purchase' ? -quantity : quantity;
       await stockQuery.docs.first.reference.update({
@@ -357,20 +530,17 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
     }
   }
 
-  Future<void> _applyStockChange(String productName, int quantity, String type) async {
+  Future _applyStockChange(String productName, int quantity, String type) async {
     final stockQuery = await FirebaseFirestore.instance
         .collection('stocks')
         .where('user', isEqualTo: user!.uid)
         .where('product', isEqualTo: productName)
         .limit(1)
         .get();
-
     final qty = type == 'Purchase' ? quantity : -quantity;
-
     if (stockQuery.docs.isNotEmpty) {
       final stockData = stockQuery.docs.first.data();
       final futureStock = (stockData['quantity'] ?? 0) + qty;
-
       // PREVENT NEGATIVE STOCK
       if (futureStock < 0) {
         final currentStock = stockData['quantity'] ?? 0;
@@ -404,7 +574,7 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
     }
   }
 
-  Future<void> _ensurePartyExists(String partyName) async {
+  Future _ensurePartyExists(String partyName) async {
     if (user == null || partyName.trim().isEmpty) return;
     final partyQuery = await FirebaseFirestore.instance
         .collection(_partyCollection)
@@ -412,10 +582,12 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
         .where('user', isEqualTo: user!.uid)
         .limit(1)
         .get();
-
     if (partyQuery.docs.isEmpty) {
       await FirebaseFirestore.instance.collection(_partyCollection).add({
         'name': partyName.trim(),
+        'phone': _phoneController.text.trim(),
+        'city': _cityController.text.trim(),
+        'state': _stateController.text.trim(),
         'user': user!.uid,
         'createdAt': DateTime.now(),
         'lastUpdated': DateTime.now(),
@@ -428,34 +600,48 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
   }
 
   // Generate bill number
+// Generate bill number with atomic counter increment
   Future<String> _generateBillNumber() async {
     try {
-      final querySnapshot = await FirebaseFirestore.instance
+      // Use a fixed document ID for the counter to avoid multiple counter documents
+      final counterRef = FirebaseFirestore.instance
           .collection('billcounter')
-          .where('user', isEqualTo: user?.uid)
-          .get();
+          .doc(user!.uid); // Use user ID as document ID
 
-      if (querySnapshot.docs.isEmpty) {
-        await FirebaseFirestore.instance.collection('billcounter').add({
-          'user': user?.uid,
-          'counter': 1,
-        });
-        return "INV-1";
-      } else {
-        final doc = querySnapshot.docs.first;
-        final data = doc.data();
-        final currentCounter = data['counter'] ?? 0;
+      // Use Firestore transaction for atomic counter increment
+      final newCounter = await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final snapshot = await transaction.get(counterRef);
+
+        int currentCounter;
+        if (snapshot.exists) {
+          currentCounter = snapshot.data()?['counter'] ?? 0;
+        } else {
+          currentCounter = 0;
+        }
+
         final newCounter = currentCounter + 1;
-        await doc.reference.update({'counter': newCounter});
-        return "INV-$newCounter";
-      }
+
+        // Update or create the counter document atomically
+        transaction.set(counterRef, {
+          'counter': newCounter,
+          'user': user!.uid,
+          'lastUpdated': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        return newCounter;
+      });
+
+      return "INV-$newCounter";
     } catch (e) {
+      print('Error generating bill number: $e');
+      // Fallback to timestamp-based bill number
       return "INV-${DateTime.now().millisecondsSinceEpoch}";
     }
   }
 
-  // FIXED: Update or create linked bill with proper synchronization
-  Future<void> _updateLinkedBill(String customerName) async {
+
+  // Update or create linked bill with proper synchronization
+  Future _updateLinkedBill(String customerName) async {
     if (_type != 'Sale') return;
 
     try {
@@ -479,7 +665,6 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
           'quantity': quantity.toString(),
           'price': unitPrice.toString(),
         });
-
         subtotal += quantity * unitPrice;
       }
 
@@ -498,6 +683,9 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
         if (billQuery.docs.isNotEmpty) {
           await billQuery.docs.first.reference.update({
             'customerName': customerName,
+            'customerPhone': _phoneController.text,
+            'customerCity': _cityController.text,
+            'customerState': _stateController.text,
             'items': billItems,
             'subtotal': subtotal,
             'tax': tax,
@@ -505,7 +693,6 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
             'date': DateFormat('dd-MM-yyyy').parse(_dateController.text),
             'updatedAt': FieldValue.serverTimestamp(),
           });
-
           print('Updated linked bill $_linkedBillNumber with ${billItems.length} products');
         } else {
           print('Linked bill $_linkedBillNumber not found, will create new one');
@@ -516,19 +703,20 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
       // Create new bill if no valid linked bill exists
       if (_linkedBillNumber == null) {
         final newBillNumber = await _generateBillNumber();
-
         await FirebaseFirestore.instance.collection('bills').add({
           'user': user!.uid,
           'billNumber': newBillNumber,
           'customerName': customerName,
-          'customerPhone': '',
+          'customerPhone': _phoneController.text,
+          'customerCity': _cityController.text,
+          'customerState': _stateController.text,
           'date': DateFormat('dd-MM-yyyy').parse(_dateController.text),
           'items': billItems,
           'subtotal': subtotal,
           'tax': tax,
           'total': total,
-          'linkedTransactionId': widget.docRef, // NEW: Link back to transaction
-          'billType': 'auto-generated', // NEW: Mark as auto-generated
+          'linkedTransactionId': widget.docRef, // Link back to transaction
+          'billType': 'auto-generated', // Mark as auto-generated
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         });
@@ -552,11 +740,19 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
   Future<void> _submitUpdate() async {
     // Hide keyboard immediately when update is pressed
     FocusScope.of(context).unfocus();
+
     if (!_formKey.currentState!.validate() || user == null) return;
 
     setState(() => _isLoading = true);
+
     try {
       final newPartyName = _partyController.text.trim();
+
+      // Check if party exists first
+      final partyExists = await _checkPartyExists(newPartyName);
+      if (!partyExists) {
+        throw Exception("Please add $_partyLabel '$newPartyName' first before updating the transaction");
+      }
 
       // Validate all products
       for (int i = 0; i < _products.length; i++) {
@@ -605,6 +801,7 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
 
       // Prepare products array for single transaction document
       List<Map<String, dynamic>> productsArray = [];
+      List<String> productNames = []; // NEW: Build product names array
       double totalAmount = 0.0;
 
       for (var product in _products) {
@@ -624,6 +821,9 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
           'unitPrice': unitPrice,
         });
 
+        // NEW: Add to product names array
+        productNames.add(productName);
+
         totalAmount += quantity * unitPrice;
 
         // Apply new stock changes
@@ -636,6 +836,7 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
           .doc(widget.docRef)
           .update({
         'product': productsArray,
+        'product_names': productNames, // NEW: Add product names array
         'party': newPartyName,
         'date': DateFormat('dd-MM-yyyy').parse(_dateController.text),
         'type': _type,
@@ -644,7 +845,7 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
         'lastUpdated': DateTime.now(),
       });
 
-      // FIXED: Update linked bill for Sale transactions
+      // Update linked bill for Sale transactions
       if (_type == 'Sale') {
         await _updateLinkedBill(newPartyName);
       }
@@ -661,13 +862,14 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
       Navigator.pop(context);
     } catch (error) {
       Fluttertoast.showToast(
-        msg: "Failed to update transaction: $error",
+        msg: "$error",
         backgroundColor: Colors.red,
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
 
   Widget _buildSuggestionsList({
     required Stream<List<String>> stream,
@@ -733,6 +935,10 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
                 onTap: () {
                   controller.text = suggestions[index];
                   focusNode.unfocus();
+                  // Load party details if it's party suggestions
+                  if (controller == _partyController) {
+                    _loadPartyDetails(suggestions[index]);
+                  }
                   setState(() {});
                 },
                 borderRadius: BorderRadius.circular(8),
@@ -752,13 +958,9 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
   }
 
   Widget _buildProductCard(int index) {
-    final product = _products[index];
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -768,141 +970,116 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.blue.shade200),
-                  ),
-                  child: Text(
-                    "Product ${index + 1}",
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.blue.shade700,
-                    ),
+                Text(
+                  "Product ${index + 1}",
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
                 if (_products.length > 1)
                   IconButton(
                     onPressed: () => _removeProduct(index),
                     icon: const Icon(Icons.remove_circle_outline),
-                    color: Colors.red.shade600,
-                    tooltip: "Remove Product",
+                    color: Colors.red,
                   ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            // Product dropdown - full width
+            // Product dropdown
             _buildStockAwareDropdown(index),
 
             // Custom product field (shown only when "Others" is selected)
             if (_products[index]['showCustomProductField'] as bool) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _products[index]['customProductController'] as TextEditingController,
-                focusNode: _products[index]['productFocusNode'] as FocusNode,
-                enabled: !_isLoading,
                 decoration: const InputDecoration(
-                  labelText: "Custom Product Name",
-                  hintText: "Enter custom product name",
+                  labelText: "Product Name",
                   border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.edit),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                 ),
                 validator: (value) {
-                  if (_products[index]['selectedProduct'] == 'Others' && (value?.trim().isEmpty == true)) {
-                    return "Please enter custom product name";
+                  if (_products[index]['selectedProduct'] == 'Others' &&
+                      (value?.trim().isEmpty ?? true)) {
+                    return "Please enter product name";
                   }
                   return null;
                 },
-                onChanged: (value) async {
-                  final normalizedProductName = value.toLowerCase().trim();
-                  (_products[index]['productController'] as TextEditingController).text = normalizedProductName;
-                  setState(() {});
-                  // Get stock for custom product if it's a sale
-                  if (_type == 'Sale' && value.trim().isNotEmpty) {
-                    await _getAvailableStock(index, normalizedProductName);
-                  }
-                },
               ),
-              if ((_products[index]['showProductSuggestions'] as bool) &&
-                  (_products[index]['customProductController'] as TextEditingController).text.trim().isNotEmpty &&
-                  !_isLoading)
-                _buildSuggestionsList(
-                  stream: _getProductSuggestions(
-                      (_products[index]['customProductController'] as TextEditingController).text),
-                  controller: _products[index]['customProductController'] as TextEditingController,
-                  focusNode: _products[index]['productFocusNode'] as FocusNode,
-                ),
             ],
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            // Quantity field - full width
+            // Quantity field (full width)
             TextFormField(
               controller: _products[index]['quantityController'] as TextEditingController,
-              enabled: !_isLoading,
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: "Quantity",
-                hintText: "Enter quantity",
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.inventory_2_outlined),
-                helperText: _type == 'Sale' &&
-                    (((_products[index]['selectedProduct'] as String).isNotEmpty &&
-                        _products[index]['selectedProduct'] != 'Others') ||
-                        (_products[index]['customProductController'] as TextEditingController)
-                            .text
-                            .isNotEmpty)
-                    ? "Available stock: ${_products[index]['availableStock']}"
-                    : null,
-                helperStyle: TextStyle(
-                  color: (_products[index]['availableStock'] as int) > 0
-                      ? Colors.green.shade600
-                      : Colors.red.shade600,
-                  fontWeight: FontWeight.w500,
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                border: OutlineInputBorder(),
+                suffixText: "kg",
               ),
               keyboardType: TextInputType.number,
               validator: (value) {
-                if (value?.trim().isEmpty == true) return "Please enter quantity";
-                final qty = int.tryParse(value!);
-                if (qty == null || qty <= 0) return "Quantity must be greater than 0";
-                if (_type == 'Sale' && qty > (_products[index]['availableStock'] as int)) {
-                  return "Insufficient stock. Available: ${_products[index]['availableStock']}";
+                if (value?.isEmpty ?? true) return "Enter quantity";
+                final qty = int.tryParse(value!) ?? 0;
+                if (qty <= 0) return "Quantity must be > 0";
+                // Check stock for sales
+                if (_type == 'Sale') {
+                  final availableStock = _products[index]['availableStock'] as int;
+                  if (qty > availableStock) {
+                    return "Max: $availableStock";
+                  }
                 }
                 return null;
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            // Unit Price field - full width
+            // Unit price field (full width)
             TextFormField(
               controller: _products[index]['unitPriceController'] as TextEditingController,
-              enabled: !_isLoading,
               decoration: const InputDecoration(
                 labelText: "Unit Price",
-                hintText: "Enter unit price",
                 border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.currency_rupee),
-                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                prefixText: "₹ ",
+                suffixText: "per kg",
               ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
               validator: (value) {
-                if (value?.trim().isEmpty == true) return "Please enter unit price";
-                final price = double.tryParse(value!);
-                return price == null || price <= 0 ? "Unit price must be greater than 0" : null;
+                if (value?.isEmpty ?? true) return "Enter price";
+                final price = double.tryParse(value!) ?? 0;
+                if (price <= 0) return "Price must be > 0";
+                return null;
               },
             ),
+
+            // Available stock indicator for sales
+            if (_type == 'Sale' && _products[index]['selectedProduct'] != 'Others') ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Text(
+                  "Available Stock: ${_products[index]['availableStock']}",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.blue.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  // Build dropdown with available stock products - FIXED FOR SALE EDITING
+  // Build dropdown with available stock products
   Widget _buildStockAwareDropdown(int index) {
     if (_type != 'Sale') {
       return DropdownButtonFormField<String>(
@@ -910,7 +1087,7 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
             ? null
             : _products[index]['selectedProduct'] as String,
         items: _predefinedProducts.map((product) {
-          return DropdownMenuItem<String>(
+          return DropdownMenuItem(
             value: product,
             child: Text(product),
           );
@@ -918,12 +1095,9 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
         onChanged: _isLoading ? null : (value) => _onProductChanged(index, value),
         decoration: const InputDecoration(
           labelText: "Product",
-          hintText: "Select a product",
           border: OutlineInputBorder(),
-          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
         ),
         validator: (value) => value == null ? "Please select a product" : null,
-        isExpanded: true,
       );
     }
 
@@ -937,72 +1111,31 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
             decoration: const InputDecoration(
               labelText: "Loading products...",
               border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
             ),
           );
         }
 
         final stockProducts = snapshot.data ?? [];
-
-        // Remove duplicates by using a Map with product name as key
-        final Map<String, Map<String, dynamic>> uniqueProductsMap = {};
-        for (final product in stockProducts) {
-          final productName = product['product'].toString();
-          // Keep the one with highest quantity if duplicates exist
-          if (!uniqueProductsMap.containsKey(productName) ||
-              (uniqueProductsMap[productName]!['quantity'] as int) < (product['quantity'] as int)) {
-            uniqueProductsMap[productName] = product;
-          }
-        }
-
         final List<DropdownMenuItem<String>> products = [];
 
         // Add stock products
-        uniqueProductsMap.values.forEach((product) {
+        for (final product in stockProducts) {
+          final productName = _capitalizeFirstLetter(product['product'].toString());
           products.add(
-            DropdownMenuItem<String>(
-              value: product['product'].toString(),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Text(
-                  product['product'].toString(),
-                  style: const TextStyle(fontSize: 14),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+            DropdownMenuItem(
+              value: productName,
+              child: Text(productName),
             ),
           );
-        });
+        }
 
-        // Get current selected value
+        // Add Others option
+        products.add(const DropdownMenuItem(
+          value: 'Others',
+          child: Text('Others'),
+        ));
+
         final currentValue = (_products[index]['selectedProduct'] as String);
-
-        // FIXED: If editing and the original product is not in current stock, add it to the list
-        if (currentValue.isNotEmpty &&
-            currentValue != 'Others' &&
-            !uniqueProductsMap.containsKey(currentValue)) {
-          // Add the original product to the beginning of the list for editing
-          products.insert(0, DropdownMenuItem<String>(
-            value: currentValue,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 4.0),
-              child: Text(
-                currentValue,
-                style: const TextStyle(fontSize: 14),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ));
-        }
-
-        // Always add "Others" option
-        if (!uniqueProductsMap.containsKey('Others')) {
-          products.add(const DropdownMenuItem<String>(
-            value: 'Others',
-            child: Text('Others'),
-          ));
-        }
-
         final validValues = products.map((product) => product.value).toList();
         final isValidSelection = currentValue.isEmpty || validValues.contains(currentValue);
 
@@ -1012,13 +1145,9 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
           onChanged: _isLoading ? null : (value) => _onProductChanged(index, value),
           decoration: const InputDecoration(
             labelText: "Product",
-            hintText: "Select a product",
             border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
           ),
           validator: (value) => value == null ? "Please select a product" : null,
-          isExpanded: true,
-          menuMaxHeight: 250,
         );
       },
     );
@@ -1026,11 +1155,21 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return AlertDialog(
+        title: const Text("Update Transaction"),
+        content: Container(
+          height: 100,
+          child: const Center(
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      );
+    }
+
     return AlertDialog(
       title: const Text("Update Transaction"),
-      content: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : ConstrainedBox(
+      content: ConstrainedBox(
         constraints: BoxConstraints(
           maxWidth: MediaQuery.of(context).size.width * 0.9,
           maxHeight: MediaQuery.of(context).size.height * 0.8,
@@ -1043,140 +1182,46 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // NEW: Show bill link status
-                  if (_linkedBillNumber != null)
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      margin: const EdgeInsets.only(bottom: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade50,
-                        border: Border.all(color: Colors.green.shade200),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
+                  // Type dropdown (readonly for update)
+                  DropdownButtonFormField<String>(
+                    value: _type.isEmpty ? null : _type,
+                    items: ['Purchase', 'Sale']
+                        .map((type) => DropdownMenuItem(value: type, child: Text(type)))
+                        .toList(),
+                    onChanged: null, // Disabled for update
+                    decoration: const InputDecoration(
+                      labelText: "Transaction Type",
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Party name field with suggestions
+                  Column(
+                    children: [
+                      Row(
                         children: [
-                          Icon(Icons.receipt, color: Colors.green.shade600, size: 20),
-                          const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
-                              'Linked to Bill: $_linkedBillNumber',
-                              style: TextStyle(
-                                color: Colors.green.shade700,
-                                fontWeight: FontWeight.w500,
+                            child: TextFormField(
+                              controller: _partyController,
+                              focusNode: _partyFocusNode,
+                              decoration: InputDecoration(
+                                labelText: _partyLabel,
+                                border: OutlineInputBorder(),
+                                suffixIcon: IconButton(
+                                  icon: Icon(Icons.add, color: Colors.indigo),
+                                  onPressed: _showAddPartyDialog,
+                                  tooltip: 'Add New $_partyLabel',
+                                ),
                               ),
+                              validator: (value) =>
+                              value?.isEmpty ?? true ? "Please enter $_partyLabel name" : null,
+                              onChanged: (value) => setState(() {}),
                             ),
                           ),
                         ],
                       ),
-                    ),
-
-                  // Type dropdown
-                  DropdownButtonFormField<String>(
-                    value: _type.isEmpty ? null : _type,
-                    items: ['Purchase', 'Sale']
-                        .map((type) => DropdownMenuItem<String>(value: type, child: Text(type)))
-                        .toList(),
-                    onChanged: _isLoading
-                        ? null
-                        : (value) {
-                      setState(() {
-                        _type = value!;
-                        _partyController.clear();
-                        _partyFocusNode.unfocus();
-                        // Reset all products' available stock when type changes
-                        for (var product in _products) {
-                          product['availableStock'] = 0;
-                        }
-                      });
-                    },
-                    decoration: const InputDecoration(
-                      labelText: "Type",
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                    ),
-                    validator: (value) => value == null ? "Please select type" : null,
-                    isExpanded: true,
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Products section with add button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        "Products",
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
-                      IconButton(
-                        onPressed: _isLoading ? null : _addNewProduct,
-                        icon: const Icon(Icons.add_circle, color: Colors.green),
-                        tooltip: "Add Product",
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Dynamic list of products
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _products.length,
-                    itemBuilder: (context, index) => _buildProductCard(index),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Date field
-                  TextFormField(
-                    controller: _dateController,
-                    enabled: !_isLoading,
-                    decoration: const InputDecoration(
-                      labelText: "Date",
-                      suffixIcon: Icon(Icons.calendar_today),
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                    ),
-                    readOnly: true,
-                    onTap: _isLoading
-                        ? null
-                        : () async {
-                      final pickedDate = await showDatePicker(
-                        context: context,
-                        initialDate: DateTime.now(),
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                      );
-                      if (pickedDate != null) {
-                        _dateController.text = DateFormat('dd-MM-yyyy').format(pickedDate);
-                      }
-                    },
-                    validator: (value) =>
-                    value?.trim().isEmpty == true ? "Please select date" : null,
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Party field with suggestions
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextFormField(
-                        controller: _partyController,
-                        focusNode: _partyFocusNode,
-                        enabled: !_isLoading,
-                        decoration: InputDecoration(
-                          labelText: _partyLabel,
-                          hintText: "Enter $_partyLabel name",
-                          border: const OutlineInputBorder(),
-                          prefixIcon: const Icon(Icons.person),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-                        ),
-                        validator: (value) =>
-                        value?.trim().isEmpty == true ? "Please enter $_partyLabel name" : null,
-                        onChanged: (value) => setState(() {}),
-                      ),
-                      if (_showPartySuggestions &&
-                          _partyController.text.trim().isNotEmpty &&
-                          _type.isNotEmpty &&
-                          !_isLoading)
+                      if (_showPartySuggestions && _partyController.text.isNotEmpty)
                         _buildSuggestionsList(
                           stream: _getPartySuggestions(_partyController.text),
                           controller: _partyController,
@@ -1186,20 +1231,105 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
                   ),
                   const SizedBox(height: 16),
 
+                  // Phone field
+                  TextFormField(
+                    controller: _phoneController,
+                    decoration: const InputDecoration(
+                      labelText: "Phone Number",
+                      border: OutlineInputBorder(),
+                      prefixText: '+91 ',
+                    ),
+                    keyboardType: TextInputType.phone,
+                    maxLength: 10,
+                    validator: (value) {
+                      if (value?.trim().isNotEmpty == true && value!.trim().length != 10) {
+                        return 'Please enter a valid 10-digit phone number';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // City field
+                  TextFormField(
+                    controller: _cityController,
+                    decoration: const InputDecoration(
+                      labelText: "City",
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // State field
+                  TextFormField(
+                    controller: _stateController,
+                    decoration: const InputDecoration(
+                      labelText: "State",
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Date field
+                  TextFormField(
+                    controller: _dateController,
+                    decoration: const InputDecoration(
+                      labelText: "Date",
+                      border: OutlineInputBorder(),
+                      suffixIcon: Icon(Icons.calendar_today),
+                    ),
+                    readOnly: true,
+                    onTap: () async {
+                      DateTime? picked = await showDatePicker(
+                        context: context,
+                        initialDate: DateFormat('dd-MM-yyyy').parse(_dateController.text),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) {
+                        _dateController.text = DateFormat('dd-MM-yyyy').format(picked);
+                      }
+                    },
+                    validator: (value) => value?.isEmpty ?? true ? "Please select date" : null,
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Products section header
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Products",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.indigo,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _addNewProduct,
+                        icon: Icon(Icons.add_circle_outline, color: Colors.indigo),
+                        tooltip: "Add Product",
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Products list
+                  ...List.generate(_products.length, (index) => _buildProductCard(index)),
+                  const SizedBox(height: 16),
+
                   // Status dropdown
                   DropdownButtonFormField<String>(
-                    value: _status.isEmpty ? null : _status,
-                    items: ['Paid', 'Due']
-                        .map((status) => DropdownMenuItem<String>(value: status, child: Text(status)))
+                    value: _status,
+                    items: ['Paid', 'Unpaid']
+                        .map((status) => DropdownMenuItem(value: status, child: Text(status)))
                         .toList(),
                     onChanged: _isLoading ? null : (value) => setState(() => _status = value!),
                     decoration: const InputDecoration(
                       labelText: "Status",
                       border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                     ),
-                    validator: (value) => value == null ? "Please select status" : null,
-                    isExpanded: true,
                   ),
                 ],
               ),
@@ -1207,42 +1337,24 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
           ),
         ),
       ),
-      actions: _isLoading
-          ? []
-          : [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
-              child: const Text("Cancel"),
-            ),
-            const SizedBox(width: 12),
-            ElevatedButton(
-              onPressed: _submitUpdate,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue.shade600,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: _isLoading
-                  ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-                  : const Text("Update"),
-            ),
-          ],
+      actions: [
+        TextButton(
+          onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+          child: const Text("Cancel"),
+        ),
+        ElevatedButton(
+          onPressed: _isLoading ? null : _submitUpdate,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.indigo,
+            foregroundColor: Colors.white,
+          ),
+          child: _isLoading
+              ? const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+          )
+              : const Text("Update"),
         ),
       ],
     );
