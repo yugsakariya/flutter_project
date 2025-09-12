@@ -7,6 +7,7 @@ import 'party_management.dart';
 
 class TransactionUpdate extends StatefulWidget {
   final String docRef;
+
   const TransactionUpdate({super.key, required this.docRef});
 
   @override
@@ -27,7 +28,6 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
   bool _showPartySuggestions = false;
   bool _isLoading = true;
   bool _isSaving = false;
-  
   List<Map<String, dynamic>> _products = [];
   Map<String, dynamic>? _originalData;
 
@@ -93,7 +93,7 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
         _selectedType = data['type'] ?? 'Purchase';
         _selectedStatus = data['status'] ?? 'Paid';
         _partyController.text = data['party'] ?? '';
-        
+
         final date = data['date'];
         if (date is Timestamp) {
           _dateController.text = DateFormat('dd-MM-yyyy').format(date.toDate());
@@ -106,14 +106,12 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
         // Load products
         final products = data['product'] as List? ?? [];
         _products.clear();
-        
         for (var productData in products) {
           if (productData != null) {
             final productMap = productData as Map<String, dynamic>;
             final productName = productMap['product']?.toString() ?? '';
             final quantity = productMap['quantity']?.toString() ?? '0';
             final unitPrice = productMap['unitPrice']?.toString() ?? '0';
-
             final product = _createProductFromData(productName, quantity, unitPrice);
             _products.add(product);
           }
@@ -127,11 +125,54 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
       // Try to load party details
       await _loadPartyDetails(_partyController.text);
 
+      // Load stock for existing products
+      for (int i = 0; i < _products.length; i++) {
+        if (_selectedType == 'Sale') {
+          String productName;
+          if (_products[i]['selectedProduct'] == 'Others') {
+            productName = (_products[i]['customProductController'] as TextEditingController).text.toLowerCase().trim();
+          } else {
+            productName = (_products[i]['selectedProduct'] as String).toLowerCase().trim();
+          }
+          if (productName.isNotEmpty) {
+            await _getAvailableStock(i, productName);
+          }
+        }
+      }
     } catch (e) {
       AppUtils.showError("Error loading transaction: $e");
       Navigator.pop(context);
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // Add the missing _getAvailableStock method
+  Future<void> _getAvailableStock(int productIndex, String productName) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || productName.isEmpty || productIndex >= _products.length) {
+      if (productIndex < _products.length) {
+        setState(() => _products[productIndex]['availableStock'] = 0);
+      }
+      return;
+    }
+
+    try {
+      final stockQuery = await FirebaseFirestore.instance
+          .collection('stocks')
+          .where('product', isEqualTo: productName.toLowerCase().trim())
+          .where('user', isEqualTo: user.uid)
+          .limit(1)
+          .get();
+
+      if (stockQuery.docs.isNotEmpty) {
+        setState(() => _products[productIndex]['availableStock'] =
+            stockQuery.docs.first['quantity'] ?? 0);
+      } else {
+        setState(() => _products[productIndex]['availableStock'] = 0);
+      }
+    } catch (e) {
+      setState(() => _products[productIndex]['availableStock'] = 0);
     }
   }
 
@@ -141,10 +182,10 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
     final quantityController = TextEditingController(text: quantity);
     final unitPriceController = TextEditingController(text: unitPrice);
     final productFocusNode = FocusNode();
-    
+
     String selectedProduct = '';
     bool showCustomProductField = false;
-    
+
     if (_predefinedProducts.contains(AppUtils.capitalize(productName))) {
       selectedProduct = AppUtils.capitalize(productName);
       productController.text = productName;
@@ -250,7 +291,7 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
     }
   }
 
-  void _onProductChanged(int index, String? value) {
+  void _onProductChanged(int index, String? value) async {
     setState(() {
       _products[index]['selectedProduct'] = value ?? '';
       _products[index]['showCustomProductField'] = value == 'Others';
@@ -261,12 +302,24 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
       } else {
         (_products[index]['productController'] as TextEditingController).clear();
       }
+
+      _products[index]['availableStock'] = 0;
     });
+
+    if (_selectedType == 'Sale' && value != 'Others' && value != null) {
+      await _getAvailableStock(index, value.toLowerCase());
+    }
+  }
+
+  // New method for handling custom product changes
+  void _onCustomProductChanged(int index, String value) async {
+    if (_selectedType == 'Sale' && value.trim().isNotEmpty) {
+      await _getAvailableStock(index, value.toLowerCase().trim());
+    }
   }
 
   Future<void> _revertStockChanges() async {
     if (_originalData == null) return;
-
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -276,7 +329,6 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
 
       for (var product in originalProducts) {
         if (product == null) continue;
-        
         final productMap = product as Map<String, dynamic>;
         final productName = productMap['product']?.toString() ?? '';
         final quantity = (productMap['quantity'] as num?)?.toInt() ?? 0;
@@ -293,7 +345,6 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
         if (stockQuery.docs.isNotEmpty) {
           final stockRef = stockQuery.docs.first.reference;
           final quantityChange = originalType == 'Purchase' ? -quantity : quantity;
-          
           await stockRef.update({
             'quantity': FieldValue.increment(quantityChange),
             if (originalType == 'Purchase') 'purchase': FieldValue.increment(-quantity),
@@ -305,19 +356,19 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
       throw Exception('Failed to revert stock changes: $e');
     }
   }
+
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _dateController.text.isNotEmpty
           ? DateFormat('dd-MM-yyyy').parse(_dateController.text)
           : DateTime.now(),
-      firstDate: DateTime(2000), // Adjust as needed
-      lastDate: DateTime.now(), // Maximum date is today
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
       helpText: 'Select Transaction Date',
       cancelText: 'Cancel',
       confirmText: 'OK',
     );
-
     if (picked != null) {
       setState(() {
         _dateController.text = DateFormat('dd-MM-yyyy').format(picked);
@@ -342,7 +393,6 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
 
       final quantity = int.tryParse(
           (product['quantityController'] as TextEditingController).text) ?? 0;
-
       if (quantity <= 0) continue;
 
       await _updateStock(productName, quantity, _selectedType);
@@ -396,7 +446,6 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSaving = true);
-
     try {
       // Validate all products
       for (int i = 0; i < _products.length; i++) {
@@ -418,11 +467,19 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
         if (quantity <= 0) {
           throw Exception("Product ${i + 1}: Quantity must be greater than 0");
         }
+
+        // Check stock for sales
+        if (_selectedType == 'Sale') {
+          final availableStock = product['availableStock'] as int;
+          if (quantity > availableStock) {
+            throw Exception(
+                "Product ${i + 1}: Only $availableStock units available in stock");
+          }
+        }
       }
 
       // Revert original stock changes
       await _revertStockChanges();
-
       // Apply new stock changes
       await _applyNewStockChanges();
 
@@ -449,7 +506,6 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
           'quantity': quantity,
           'unitPrice': unitPrice,
         });
-
         productNames.add(productName);
       }
 
@@ -474,13 +530,13 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
 
       AppUtils.showSuccess('Transaction updated successfully!');
       Navigator.of(context).pop();
-
     } catch (e) {
       AppUtils.showError('Error updating transaction: $e');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
   }
+
   Future<String> _generateBillNumber() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -509,7 +565,7 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
     }
   }
 
-// Method to update corresponding bill
+  // Method to update corresponding bill
   Future<void> _updateCorrespondingBill(String transactionId) async {
     if (_selectedType != 'Sale') {
       // If changed from Sale to Purchase, delete the bill
@@ -592,13 +648,12 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
             .doc(transactionId)
             .update({'billId': billDoc.id});
       }
-
     } catch (e) {
       print('Error updating corresponding bill: $e');
     }
   }
 
-// Method to delete corresponding bill
+  // Method to delete corresponding bill
   Future<void> _deleteCorrespondingBill(String transactionId) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -613,7 +668,6 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
 
       if (billQuery.docs.isNotEmpty) {
         await billQuery.docs.first.reference.delete();
-
         // Remove bill reference from transaction
         await FirebaseFirestore.instance
             .collection('transactions')
@@ -624,6 +678,7 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
       print('Error deleting corresponding bill: $e');
     }
   }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -671,7 +726,6 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 16),
 
                 // Party Field with suggestions
@@ -694,6 +748,7 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
                     ),
                   ],
                 ),
+
                 if (_showPartySuggestions && _partyController.text.isNotEmpty)
                   SuggestionsList(
                     stream: FirestoreHelper.getSuggestions(_partyCollection, 'name', _partyController.text),
@@ -714,14 +769,14 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
                   validator: AppUtils.validatePhone,
                 ),
                 const SizedBox(height: 16),
-                
+
                 AppTextField(
                   controller: _cityController,
                   labelText: "City",
                   prefixIcon: Icons.location_city,
                 ),
                 const SizedBox(height: 16),
-                
+
                 AppTextField(
                   controller: _stateController,
                   labelText: "State",
@@ -784,10 +839,10 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
           ),
           child: _isSaving
               ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                )
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+          )
               : const Text("Update"),
         ),
       ],
@@ -837,22 +892,75 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
               validator: (value) => value == null ? "Please select a product" : null,
             ),
 
-            // Custom product field
+            // Custom product field with suggestions
             if (_products[index]['showCustomProductField'] as bool) ...[
               const SizedBox(height: 12),
-              AppTextField(
-                controller: _products[index]['customProductController'] as TextEditingController,
-                labelText: "Product Name",
-                validator: (value) {
-                  if (_products[index]['selectedProduct'] == 'Others' && 
-                      (value?.trim().isEmpty ?? true)) {
-                    return "Please enter product name";
-                  }
-                  return null;
-                },
+              Column(
+                children: [
+                  AppTextField(
+                    controller: _products[index]['customProductController'] as TextEditingController,
+                    focusNode: _products[index]['productFocusNode'] as FocusNode,
+                    labelText: "Product Name",
+                    onChanged: (value) {
+                      setState(() {});
+                      _onCustomProductChanged(index, value);
+                    },
+                    validator: (value) {
+                      if (_products[index]['selectedProduct'] == 'Others' &&
+                          (value?.trim().isEmpty ?? true)) {
+                        return "Please enter product name";
+                      }
+                      return null;
+                    },
+                  ),
+                  // Product suggestions for custom products
+                  if ((_products[index]['productFocusNode'] as FocusNode).hasFocus &&
+                      (_products[index]['customProductController'] as TextEditingController).text.isNotEmpty)
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 150),
+                      child: Card(
+                        child: StreamBuilder<QuerySnapshot>(
+                          stream: FirebaseFirestore.instance
+                              .collection('stocks')
+                              .where('user', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+                              .where('product', isGreaterThanOrEqualTo:
+                          (_products[index]['customProductController'] as TextEditingController).text.toLowerCase())
+                              .where('product', isLessThan:
+                          (_products[index]['customProductController'] as TextEditingController).text.toLowerCase() + '\uf8ff')
+                              .limit(5)
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                              return const SizedBox.shrink();
+                            }
+
+                            return ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: snapshot.data!.docs.length,
+                              itemBuilder: (context, suggestionIndex) {
+                                final doc = snapshot.data!.docs[suggestionIndex];
+                                final productName = AppUtils.capitalize(doc['product']);
+                                final stock = doc['quantity'] ?? 0;
+
+                                return ListTile(
+                                  dense: true,
+                                  title: Text(productName),
+                                  subtitle: Text('Stock: $stock'),
+                                  onTap: () {
+                                    (_products[index]['customProductController'] as TextEditingController).text = productName;
+                                    (_products[index]['productFocusNode'] as FocusNode).unfocus();
+                                    _onCustomProductChanged(index, productName);
+                                  },
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
-
             const SizedBox(height: 12),
 
             // Quantity field
@@ -861,9 +969,19 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
               labelText: "Quantity",
               suffixText: "kg",
               keyboardType: TextInputType.number,
-              validator: (value) => AppUtils.validatePositiveInteger(value, 'Quantity'),
+              validator: (value) {
+                if (value?.isEmpty ?? true) return "Enter quantity";
+                final qty = int.tryParse(value!) ?? 0;
+                if (qty <= 0) return "Quantity must be > 0";
+                if (_selectedType == 'Sale') {
+                  final availableStock = _products[index]['availableStock'] as int;
+                  if (qty > availableStock) {
+                    return "Max: $availableStock";
+                  }
+                }
+                return null;
+              },
             ),
-
             const SizedBox(height: 12),
 
             // Unit price field
@@ -875,6 +993,29 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               validator: (value) => AppUtils.validatePositiveNumber(value, 'Unit Price'),
             ),
+
+            // Available stock indicator (updated to show for both predefined and custom products)
+            if (_selectedType == 'Sale' &&
+                ((_products[index]['selectedProduct'] != 'Others' && _products[index]['selectedProduct'].toString().isNotEmpty) ||
+                    (_products[index]['selectedProduct'] == 'Others' && (_products[index]['customProductController'] as TextEditingController).text.isNotEmpty))) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Text(
+                  "Available Stock: ${_products[index]['availableStock']}",
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.blue.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
