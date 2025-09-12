@@ -5,6 +5,8 @@ import 'package:flutter_project/EditBill.dart';
 import 'package:intl/intl.dart';
 import 'utils.dart';
 import 'AddBill.dart';
+import 'pdf_generator.dart';
+import 'package:open_file/open_file.dart';
 
 class BillsScreen extends StatefulWidget {
   final VoidCallback? goToDashboard;
@@ -33,6 +35,32 @@ class _BillsScreenState extends State<BillsScreen> {
         .where('user', isEqualTo: user.uid)
         .orderBy('createdAt', descending: true)
         .snapshots();
+  }
+  Future<void> _generateBillPDF(DocumentSnapshot doc) async {
+    final data = doc.data() as Map<String, dynamic>;
+    try {
+      LoadingDialog.show(context, 'Generating PDF...');
+
+      final result = await PDFGenerator.generateGSTVoucher(billData: data);
+
+      LoadingDialog.hide(context);
+
+      if (result['success'] == true) {
+        AppUtils.showSuccess('PDF generated successfully!');
+
+        // Open the PDF
+        final openResult = await OpenFile.open(result['localPath']);
+
+        if (openResult.type != ResultType.done) {
+          AppUtils.showWarning('PDF saved but could not be opened automatically');
+        }
+      } else {
+        AppUtils.showError(result['error'] ?? 'Failed to generate PDF');
+      }
+    } catch (e) {
+      LoadingDialog.hide(context);
+      AppUtils.showError('Error generating PDF: $e');
+    }
   }
 
   List<DocumentSnapshot> _filterBills(List<DocumentSnapshot> docs) {
@@ -269,37 +297,51 @@ class _BillsScreenState extends State<BillsScreen> {
                         ],
                       ),
                     ),
-                    PopupMenuButton(
-                      onSelected: (value) {
-                        if (value == 'edit') {
-                          Navigator.push(context, MaterialPageRoute(builder: (_)=>EditBillScreen(billNumber: billNumber)));
-                        }
-                        if (value == 'delete') {
-                          _deleteBill(doc.id);
-                        }
-                      },
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(
-                          value: 'edit',
-                          child: Row(
-                            children: [
-                              Icon(Icons.edit),
-                              SizedBox(width: 8),
-                              Text('Edit'),
-                            ],
-                          ),
-                        ),PopupMenuItem(
-                          value: 'delete',
-                          child: Row(
-                            children: [
-                              Icon(Icons.delete, color: Colors.red),
-                              SizedBox(width: 8),
-                              Text('Delete'),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+          PopupMenuButton(
+            onSelected: (value) {
+              if (value == 'edit') {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => EditBillScreen(billNumber: billNumber)));
+              }
+              if (value == 'delete') {
+                _deleteBill(doc.id);
+              }
+              if (value == 'pdf') {  // Add this
+                _generateBillPDF(doc);
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'edit',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit),
+                    SizedBox(width: 8),
+                    Text('Edit'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(  // Add this
+                value: 'pdf',
+                child: Row(
+                  children: [
+                    Icon(Icons.picture_as_pdf, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Generate PDF'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Delete'),
+                  ],
+                ),
+              ),
+            ],
+          ),
                   ],
                 ),
                 const SizedBox(height: 12),

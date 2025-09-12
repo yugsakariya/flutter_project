@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
 import 'utils.dart';
 import 'party_management.dart';
@@ -142,7 +143,7 @@ class _NewBillScreenState extends State<NewBillScreen> {
       context: context,
       initialDate: _selectedDate,
       firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
+      lastDate: DateTime.now(),
     );
     if (picked != null) {
       setState(() => _selectedDate = picked);
@@ -211,15 +212,54 @@ class _NewBillScreenState extends State<NewBillScreen> {
       return sum + (quantity * price);
     });
   }
+  Future<bool> _customerExists(String customerName) async {
+    if (customerName.trim().isEmpty) return false;
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final customerQuery = await FirebaseFirestore.instance
+          .collection('customers')
+          .where('user', isEqualTo: user?.uid)
+          .where('name', isEqualTo: customerName.trim())
+          .limit(1)
+          .get();
+
+      return customerQuery.docs.isNotEmpty;
+    } catch (e) {
+      print('Error checking customer existence: $e');
+      return false;
+    }
+  }
 
   Future<void> _saveBill() async {
     if (_nameController.text.isEmpty || _items.isEmpty) {
-      AppUtils.showWarning('Please add customer name and items');
+      Fluttertoast.showToast(
+        msg: 'Please add customer name and items',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.orange,
+        textColor: Colors.white,
+      );
+      return;
+    }
+
+    // Check if customer exists
+    final customerExists = await _customerExists(_nameController.text);
+    if (!customerExists) {
+      Fluttertoast.showToast(
+        msg: 'Customer "${_nameController.text}" not found. Please add customer first.',
+        toastLength: Toast.LENGTH_LONG,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
+      );
+
+      // Optionally show the add customer dialog
+      _showAddCustomerDialog();
       return;
     }
 
     LoadingDialog.show(context, 'Saving bill...');
-
     try {
       final user = FirebaseAuth.instance.currentUser;
       final billNumber = await _generateBillNumber();
@@ -227,7 +267,8 @@ class _NewBillScreenState extends State<NewBillScreen> {
       final tax = subtotal * 0.05;
       final total = subtotal + tax;
 
-      await FirebaseFirestore.instance.collection('bills').add({
+      // Save bill first
+      final billDoc = await FirebaseFirestore.instance.collection('bills').add({
         'user': user?.uid,
         'billNumber': billNumber,
         'customerName': _nameController.text,
@@ -244,12 +285,139 @@ class _NewBillScreenState extends State<NewBillScreen> {
         'billType': 'manual',
       });
 
+      // Create corresponding sale transaction
+      final transactionId = await _createTransactionFromBill(billDoc.id);
+
+      // Update bill with transaction reference
+      if (transactionId != null) {
+        await billDoc.update({'transactionId': transactionId});
+      }
+
       LoadingDialog.hide(context);
-      AppUtils.showSuccess('Bill $billNumber saved successfully!');
+      Fluttertoast.showToast(
+        msg: 'Bill $billNumber saved successfully!',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.green,
+        textColor: Colors.white,
+      );
       Navigator.pop(context);
     } catch (e) {
       LoadingDialog.hide(context);
-      AppUtils.showError('Error saving bill: $e');
+      Fluttertoast.showToast(
+        msg: 'Error saving bill: $e',
+        toastLength: Toast.LENGTH_LONG,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
+      );
+    }
+  }
+  Future<String?> _createTransactionFromBill(String billId) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return null;
+
+      // Convert bill items to transaction products format
+      List<Map<String, dynamic>> productArray = [];
+      List<String> productNames = [];
+
+      for (var item in _items) {
+        final productName = item['name']?.toLowerCase() ?? '';
+        final quantity = int.tryParse(item['quantity'] ?? '0') ?? 0;
+        final unitPrice = double.tryParse(item['price'] ?? '0') ?? 0.0;
+
+        if (productName.isNotEmpty && quantity > 0 && unitPrice > 0) {
+          productArray.add({
+            'product': productName,
+            'quantity': quantity,
+            'unitPrice': unitPrice,
+          });
+          productNames.add(productName);
+        }
+      }
+
+      if (productArray.isEmpty) return null;
+
+      // Create transaction data
+      final transactionData = {
+        'user': user.uid,
+        'type': 'Sale', // Bills always correspond to Sale transactions
+        'party': _nameController.text.trim(),
+        'product': productArray,
+        'product_names': productNames,
+        'date': _selectedDate,
+        'timestamp': DateTime.now(),
+        'status': 'Paid', // Default status for manual bills
+        'billId': billId, // Link to bill
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+
+      // Add transaction
+      final transactionDoc = await FirebaseFirestore.instance
+          .collection('transactions')
+          .add(transactionData);
+
+      // Update stock for each product (reduce quantity for sales)
+      for (var product in productArray) {
+        await _updateStockForProduct(
+            product['product'],
+            product['quantity'],
+            'Sale'
+        );
+      }
+
+      return transactionDoc.id;
+
+    } catch (e) {
+      print('Error creating transaction from bill: $e');
+      return null;
+    }
+  }
+
+// Helper method to update stock
+  Future<void> _updateStockForProduct(String productName, int quantity, String type) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final stockQuery = await FirebaseFirestore.instance
+          .collection('stocks')
+          .where('product', isEqualTo: productName)
+          .where('user', isEqualTo: user.uid)
+          .limit(1)
+          .get();
+
+      final quantityChange = type == "Purchase" ? quantity : -quantity;
+
+      if (stockQuery.docs.isNotEmpty) {
+        final currentStock = stockQuery.docs.first.data();
+        final currentQty = currentStock['quantity'] ?? 0;
+        final newQuantity = currentQty + quantityChange;
+
+        // Only update if there's enough stock or if it's a purchase
+        if (newQuantity >= 0 || type == "Purchase") {
+          await stockQuery.docs.first.reference.update({
+            'quantity': newQuantity,
+            'purchase': FieldValue.increment(type == "Purchase" ? quantity : 0),
+            'sales': FieldValue.increment(type == "Sale" ? quantity : 0),
+            'lastUpdated': DateTime.now(),
+          });
+        }
+      } else if (type == "Purchase") {
+        // Create new stock entry for purchase
+        await FirebaseFirestore.instance.collection('stocks').add({
+          'product': productName,
+          'quantity': quantity,
+          'purchase': quantity,
+          'sales': 0,
+          'user': user.uid,
+          'createdAt': DateTime.now(),
+          'lastUpdated': DateTime.now(),
+        });
+      }
+    } catch (e) {
+      print('Error updating stock for product $productName: $e');
     }
   }
 
@@ -272,16 +440,16 @@ class _NewBillScreenState extends State<NewBillScreen> {
           children: [
             _buildSectionHeader('CUSTOMER DETAILS'),
             _buildCustomerForm(),
-            
+
             _buildSectionHeader('BILL INFO'),
             _buildBillInfo(),
-            
+
             _buildSectionHeader('ITEMS'),
             _buildItemsSection(),
-            
+
             _buildSectionHeader('SUMMARY'),
             _buildSummary(subtotal, tax, total),
-            
+
             const SizedBox(height: 20),
             _buildSaveButton(),
           ],
@@ -486,6 +654,7 @@ class _ProductSelectionCardState extends State<ProductSelectionCard> {
         'quantity': _quantityController.text,
         'price': _priceController.text,
       });
+      FocusManager.instance.primaryFocus?.unfocus();
     }
   }
 

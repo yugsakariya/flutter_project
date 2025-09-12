@@ -305,6 +305,25 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
       throw Exception('Failed to revert stock changes: $e');
     }
   }
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _dateController.text.isNotEmpty
+          ? DateFormat('dd-MM-yyyy').parse(_dateController.text)
+          : DateTime.now(),
+      firstDate: DateTime(2000), // Adjust as needed
+      lastDate: DateTime.now(), // Maximum date is today
+      helpText: 'Select Transaction Date',
+      cancelText: 'Cancel',
+      confirmText: 'OK',
+    );
+
+    if (picked != null) {
+      setState(() {
+        _dateController.text = DateFormat('dd-MM-yyyy').format(picked);
+      });
+    }
+  }
 
   Future<void> _applyNewStockChanges() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -403,7 +422,7 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
 
       // Revert original stock changes
       await _revertStockChanges();
-      
+
       // Apply new stock changes
       await _applyNewStockChanges();
 
@@ -450,6 +469,9 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
           .doc(widget.docRef)
           .update(transactionData);
 
+      // Update or create/delete corresponding bill
+      await _updateCorrespondingBill(widget.docRef);
+
       AppUtils.showSuccess('Transaction updated successfully!');
       Navigator.of(context).pop();
 
@@ -459,7 +481,149 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
       if (mounted) setState(() => _isSaving = false);
     }
   }
+  Future<String> _generateBillNumber() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('billcounter')
+          .where('user', isEqualTo: user?.uid)
+          .get();
 
+      int newCounter;
+      if (querySnapshot.docs.isEmpty) {
+        await FirebaseFirestore.instance.collection('billcounter').add({
+          'user': user?.uid,
+          'counter': 1,
+        });
+        newCounter = 1;
+      } else {
+        final doc = querySnapshot.docs.first;
+        final currentCounter = doc.data()['counter'] ?? 0;
+        newCounter = currentCounter + 1;
+        await doc.reference.update({'counter': newCounter});
+      }
+
+      return "INV-$newCounter";
+    } catch (e) {
+      return "INV-${DateTime.now().millisecondsSinceEpoch}";
+    }
+  }
+
+// Method to update corresponding bill
+  Future<void> _updateCorrespondingBill(String transactionId) async {
+    if (_selectedType != 'Sale') {
+      // If changed from Sale to Purchase, delete the bill
+      await _deleteCorrespondingBill(transactionId);
+      return;
+    }
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // Find existing bill
+      final billQuery = await FirebaseFirestore.instance
+          .collection('bills')
+          .where('user', isEqualTo: user.uid)
+          .where('transactionId', isEqualTo: transactionId)
+          .limit(1)
+          .get();
+
+      // Convert transaction products to bill items format
+      List<Map<String, dynamic>> billItems = [];
+      double subtotal = 0.0;
+
+      for (var product in _products) {
+        String productName;
+        if (product['selectedProduct'] == 'Others') {
+          productName = (product['customProductController'] as TextEditingController)
+              .text.trim();
+        } else {
+          productName = (product['selectedProduct'] as String);
+        }
+
+        final quantity = int.parse(
+            (product['quantityController'] as TextEditingController).text);
+        final unitPrice = double.parse(
+            (product['unitPriceController'] as TextEditingController).text);
+
+        billItems.add({
+          'name': productName,
+          'quantity': quantity.toString(),
+          'price': unitPrice.toString(),
+        });
+
+        subtotal += quantity * unitPrice;
+      }
+
+      final tax = subtotal * 0.05;
+      final total = subtotal + tax;
+
+      final billData = {
+        'customerName': _partyController.text.trim(),
+        'customerPhone': _phoneController.text.trim(),
+        'customerCity': _cityController.text.trim(),
+        'customerState': _stateController.text.trim(),
+        'date': DateFormat('dd-MM-yyyy').parse(_dateController.text),
+        'items': billItems,
+        'subtotal': subtotal,
+        'tax': tax,
+        'total': total,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      if (billQuery.docs.isNotEmpty) {
+        // Update existing bill
+        await billQuery.docs.first.reference.update(billData);
+      } else {
+        // Create new bill if doesn't exist
+        final billNumber = await _generateBillNumber();
+        billData['billNumber'] = billNumber;
+        billData['user'] = user.uid;
+        billData['transactionId'] = transactionId;
+        billData['billType'] = 'auto';
+        billData['createdAt'] = FieldValue.serverTimestamp();
+
+        final billDoc = await FirebaseFirestore.instance.collection('bills').add(billData);
+
+        // Update transaction with bill reference
+        await FirebaseFirestore.instance
+            .collection('transactions')
+            .doc(transactionId)
+            .update({'billId': billDoc.id});
+      }
+
+    } catch (e) {
+      print('Error updating corresponding bill: $e');
+    }
+  }
+
+// Method to delete corresponding bill
+  Future<void> _deleteCorrespondingBill(String transactionId) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final billQuery = await FirebaseFirestore.instance
+          .collection('bills')
+          .where('user', isEqualTo: user.uid)
+          .where('transactionId', isEqualTo: transactionId)
+          .limit(1)
+          .get();
+
+      if (billQuery.docs.isNotEmpty) {
+        await billQuery.docs.first.reference.delete();
+
+        // Remove bill reference from transaction
+        await FirebaseFirestore.instance
+            .collection('transactions')
+            .doc(transactionId)
+            .update({'billId': FieldValue.delete()});
+      }
+    } catch (e) {
+      print('Error deleting corresponding bill: $e');
+    }
+  }
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -496,13 +660,18 @@ class _TransactionUpdateState extends State<TransactionUpdate> {
                 const SizedBox(height: 16),
 
                 // Date Field
-                AppTextField(
-                  controller: _dateController,
-                  labelText: "Date",
-                  prefixIcon: Icons.calendar_today,
-                  enabled: false,
-                  validator: (value) => value?.isEmpty ?? true ? "Please select date" : null,
+                GestureDetector(
+                  onTap: _isLoading ? null : () => _selectDate(context),
+                  child: AbsorbPointer(
+                    child: AppTextField(
+                      controller: _dateController,
+                      labelText: "Date",
+                      prefixIcon: Icons.calendar_today,
+                      validator: (value) => value?.isEmpty ?? true ? "Please select date" : null,
+                    ),
+                  ),
                 ),
+
                 const SizedBox(height: 16),
 
                 // Party Field with suggestions

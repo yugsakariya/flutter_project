@@ -168,6 +168,26 @@ class _TransactionaddState extends State<Transactionadd> {
       _products.add(newProduct);
     });
   }
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _dateController.text.isNotEmpty
+          ? DateFormat('dd-MM-yyyy').parse(_dateController.text)
+          : DateTime.now(),
+      firstDate: DateTime(2000), // Adjust as needed
+      lastDate: DateTime.now(), // Maximum date is today
+      helpText: 'Select Transaction Date',
+      cancelText: 'Cancel',
+      confirmText: 'OK',
+    );
+
+    if (picked != null) {
+      setState(() {
+        _dateController.text = DateFormat('dd-MM-yyyy').format(picked);
+      });
+    }
+  }
+
 
   void _removeProduct(int index) {
     if (_products.length > 1) {
@@ -335,22 +355,39 @@ class _TransactionaddState extends State<Transactionadd> {
         await _updateStock(productName, quantity, _selectedType);
       }
 
-      // Add transaction
+      // Add transaction first
       final transactionData = {
         'user': user.uid,
         'type': _selectedType,
         'party': partyName,
         'product': productArray,
-        'product_names': productNames, // For search functionality
+        'product_names': productNames,
         'date': DateFormat('dd-MM-yyyy').parse(_dateController.text),
         'timestamp': DateTime.now(),
         'status': _selectedStatus,
         'createdAt': FieldValue.serverTimestamp(),
       };
 
-      await FirebaseFirestore.instance.collection('transactions').add(transactionData);
+      final transactionDoc = await FirebaseFirestore.instance
+          .collection('transactions')
+          .add(transactionData);
 
-      AppUtils.showSuccess('Transaction added successfully!');
+      // Create bill if it's a Sale transaction
+      String? billId;
+      if (_selectedType == 'Sale') {
+        billId = await _createBillFromTransaction(transactionDoc.id);
+
+        // Update transaction with bill reference
+        if (billId != null) {
+          await transactionDoc.update({'billId': billId});
+          AppUtils.showSuccess('Sale transaction and bill created successfully!');
+        } else {
+          AppUtils.showSuccess('Sale transaction added successfully!');
+        }
+      } else {
+        AppUtils.showSuccess('Purchase transaction added successfully!');
+      }
+
       Navigator.of(context).pop();
 
     } catch (e) {
@@ -360,6 +397,100 @@ class _TransactionaddState extends State<Transactionadd> {
     }
   }
 
+// Method to generate bill number
+  Future<String> _generateBillNumber() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('billcounter')
+          .where('user', isEqualTo: user?.uid)
+          .get();
+
+      int newCounter;
+      if (querySnapshot.docs.isEmpty) {
+        await FirebaseFirestore.instance.collection('billcounter').add({
+          'user': user?.uid,
+          'counter': 1,
+        });
+        newCounter = 1;
+      } else {
+        final doc = querySnapshot.docs.first;
+        final currentCounter = doc.data()['counter'] ?? 0;
+        newCounter = currentCounter + 1;
+        await doc.reference.update({'counter': newCounter});
+      }
+
+      return "INV-$newCounter";
+    } catch (e) {
+      return "INV-${DateTime.now().millisecondsSinceEpoch}";
+    }
+  }
+
+// Method to create bill from sale transaction
+  Future<String?> _createBillFromTransaction(String transactionId) async {
+    if (_selectedType != 'Sale') return null; // Only for Sale transactions
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return null;
+
+      // Convert transaction products to bill items format
+      List<Map<String, dynamic>> billItems = [];
+      double subtotal = 0.0;
+
+      for (var product in _products) {
+        String productName;
+        if (product['selectedProduct'] == 'Others') {
+          productName = (product['customProductController'] as TextEditingController)
+              .text.trim();
+        } else {
+          productName = (product['selectedProduct'] as String);
+        }
+
+        final quantity = int.parse(
+            (product['quantityController'] as TextEditingController).text);
+        final unitPrice = double.parse(
+            (product['unitPriceController'] as TextEditingController).text);
+
+        billItems.add({
+          'name': productName,
+          'quantity': quantity.toString(),
+          'price': unitPrice.toString(),
+        });
+
+        subtotal += quantity * unitPrice;
+      }
+
+      final tax = subtotal * 0.05; // 5% tax
+      final total = subtotal + tax;
+      final billNumber = await _generateBillNumber();
+
+      final billData = {
+        'user': user.uid,
+        'transactionId': transactionId, // Link to transaction
+        'billNumber': billNumber,
+        'customerName': _partyController.text.trim(),
+        'customerPhone': _phoneController.text.trim(),
+        'customerCity': _cityController.text.trim(),
+        'customerState': _stateController.text.trim(),
+        'date': DateFormat('dd-MM-yyyy').parse(_dateController.text),
+        'items': billItems,
+        'subtotal': subtotal,
+        'tax': tax,
+        'total': total,
+        'billType': 'auto', // Mark as auto-generated
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      final billDoc = await FirebaseFirestore.instance.collection('bills').add(billData);
+      return billDoc.id;
+
+    } catch (e) {
+      print('Error creating bill from transaction: $e');
+      return null;
+    }
+  }
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -387,12 +518,16 @@ class _TransactionaddState extends State<Transactionadd> {
                 const SizedBox(height: 16),
 
                 // Date Field
-                AppTextField(
-                  controller: _dateController,
-                  labelText: "Date",
-                  prefixIcon: Icons.calendar_today,
-                  enabled: false,
-                  validator: (value) => value?.isEmpty ?? true ? "Please select date" : null,
+                GestureDetector(
+                  onTap: _isLoading ? null : () => _selectDate(context),
+                  child: AbsorbPointer(
+                    child: AppTextField(
+                      controller: _dateController,
+                      labelText: "Date",
+                      prefixIcon: Icons.calendar_today,
+                      validator: (value) => value?.isEmpty ?? true ? "Please select date" : null,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
 

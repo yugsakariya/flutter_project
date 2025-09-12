@@ -109,7 +109,7 @@ class _DashboardState extends State<Dashboard> {
                         firstDate: DateTime(2020),
                         lastDate: DateTime.now(),
                       );
-                      if (picked != null) setState(() => toDate = picked);
+                      if (picked != null) setState(() => toDate = picked.add(const Duration(days: 1)));
                     },
                   ),
                   const SizedBox(height: 16),
