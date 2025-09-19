@@ -182,11 +182,6 @@ class _LowStocksState extends State<LowStocks> {
                       ),
                     ],
                   ),
-                  trailing: Icon(
-                    Icons.arrow_forward_ios,
-                    color: Colors.grey.shade400,
-                    size: 16,
-                  ),
                 ),
               );
             },
